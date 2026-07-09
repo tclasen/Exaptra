@@ -56,6 +56,18 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias(s))
 }
 
+// Redacted returns a copy of the snapshot with secret config values removed.
+func (s Snapshot) Redacted() Snapshot {
+	s.Config = s.Config.Redacted()
+	s.Audits = cloneAudits(s.Audits)
+	s.Tracker = cloneTrackerAudits(s.Tracker)
+	s.Profile = profiles.CloneSelection(s.Profile)
+	s.Workspace = cloneWorkspaceSnapshot(s.Workspace)
+	s.Orchestration = orchestration.CloneAggregate(s.Orchestration)
+	s.Workflow = workflow.CloneTrace(s.Workflow)
+	return s
+}
+
 func cloneAudits(in []meta.AuditRecord) []meta.AuditRecord {
 	if in == nil {
 		return nil
