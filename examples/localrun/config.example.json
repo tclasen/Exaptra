@@ -9,7 +9,10 @@
   "mcp_providers": [
     {
       "name": "localrun",
-      "command": "builtin"
+      "command": "builtin",
+      "env": {
+        "EXAPTRA_TOKEN": "example-provider-token"
+      }
     }
   ],
   "tool_policy": {

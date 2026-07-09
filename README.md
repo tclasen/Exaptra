@@ -154,6 +154,7 @@ tool registry state, and meta audit records.
 Maintainers can validate the current MVP with:
 
 ```bash
+make validate
 go test ./...
 go run ./cmd/example-run -config examples/localrun/config.example.json
 ```
