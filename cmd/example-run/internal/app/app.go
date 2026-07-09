@@ -286,26 +286,7 @@ func Run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("example run: parse spend window: %w", err)
 	}
-	spendReport := spend.Summarize([]spend.Usage{
-		{
-			RunID:            "example-run",
-			Provider:         cfg.Model.Provider,
-			Model:            cfg.Model.Name,
-			ObservedAt:       time.Date(2026, 7, 9, 20, 0, 0, 0, time.UTC),
-			InputTokens:      320,
-			OutputTokens:     140,
-			EstimatedCostUSD: spend.EstimateCostUSD(320, 140, 0.0, 0.0),
-		},
-		{
-			RunID:            "example-run",
-			Provider:         cfg.Model.Provider,
-			Model:            cfg.Model.Name,
-			ObservedAt:       time.Date(2026, 7, 9, 20, 15, 0, 0, time.UTC),
-			InputTokens:      120,
-			OutputTokens:     60,
-			EstimatedCostUSD: spend.EstimateCostUSD(120, 60, 0.0, 0.0),
-		},
-	}, spendBudgets(cfg.Spend.Budgets), spendWindow)
+	spendReport := spend.Summarize(observedSpendUsage("example-run", cfg.Model.Provider, cfg.Model.Name, s, &workflowTrace, fanoutAggregate, trackerStore.Audits()), spendBudgets(cfg.Spend.Budgets), spendWindow)
 
 	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace, &spendReport)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
@@ -330,6 +311,77 @@ func spendBudgets(budgets []config.SpendBudget) []spend.Budget {
 		}
 	}
 	return out
+}
+
+func observedSpendUsage(runID, provider, model string, s *stream.Stream, workflowTrace *workflow.Trace, aggregate *orchestration.Aggregate, trackerAudits []tracker.AuditRecord) []spend.Usage {
+	observedAt := time.Now().UTC()
+	var records []spend.Usage
+	if s != nil {
+		inputTokens, outputTokens := estimateStreamTokens(s.Trajectory())
+		records = append(records, spendUsage(runID, provider, model, observedAt, inputTokens, outputTokens))
+	}
+	if workflowTrace != nil {
+		records = append(records, spendUsage(runID, provider, model, observedAt.Add(time.Second), len(workflowTrace.Records)*12, jsonSize(workflowTrace)))
+	}
+	if aggregate != nil {
+		records = append(records, spendUsage(runID, provider, model, observedAt.Add(2*time.Second), len(aggregate.Outcomes)*16, jsonSize(aggregate)))
+	}
+	if len(trackerAudits) != 0 {
+		records = append(records, spendUsage(runID, provider, model, observedAt.Add(3*time.Second), len(trackerAudits)*8, jsonSize(trackerAudits)))
+	}
+	return records
+}
+
+func spendUsage(runID, provider, model string, observedAt time.Time, inputTokens, outputTokens int) spend.Usage {
+	return spend.Usage{
+		RunID:            runID,
+		Provider:         provider,
+		Model:            model,
+		ObservedAt:       observedAt,
+		InputTokens:      inputTokens,
+		OutputTokens:     outputTokens,
+		EstimatedCostUSD: spend.EstimateCostUSD(inputTokens, outputTokens, 0, 0),
+	}
+}
+
+func estimateStreamTokens(trajectory stream.Trajectory) (int, int) {
+	var inputTokens int
+	var outputTokens int
+	for _, item := range trajectory.Items {
+		switch item.Type {
+		case stream.ItemTypeMessage:
+			tokens := estimateTextTokens(item.Text())
+			if item.Role == stream.RoleUser {
+				inputTokens += tokens
+			} else {
+				outputTokens += tokens
+			}
+		case stream.ItemTypeFunctionCall:
+			inputTokens += estimateTextTokens(item.Arguments)
+		case stream.ItemTypeFunctionCallOutput:
+			outputTokens += estimateTextTokens(item.Output)
+		}
+	}
+	for _, transition := range trajectory.MetaTransitions {
+		inputTokens += jsonSize(transition.Before)
+		outputTokens += jsonSize(transition.After)
+	}
+	return inputTokens, outputTokens
+}
+
+func estimateTextTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	return (len(text) + 3) / 4
+}
+
+func jsonSize(value any) int {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return 0
+	}
+	return estimateTextTokens(string(encoded))
 }
 
 type resolverMap map[string]mcp.ToolCaller

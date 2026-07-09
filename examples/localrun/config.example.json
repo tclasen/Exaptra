@@ -32,7 +32,7 @@
         "name": "example-hourly",
         "provider": "local",
         "model": "example-model",
-        "max_tokens": 500,
+        "max_tokens": 100,
         "max_cost_usd": 0.01
       }
     ]
