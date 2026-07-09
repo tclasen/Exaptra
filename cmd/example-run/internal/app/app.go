@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/tclasen/Exaptra/config"
 	"github.com/tclasen/Exaptra/examples/localrun"
@@ -17,6 +19,7 @@ import (
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
+	"github.com/tclasen/Exaptra/workflowdoc"
 	"github.com/tclasen/Exaptra/workspace"
 )
 
@@ -62,6 +65,28 @@ func Run(args []string, stdout io.Writer) error {
 	})
 
 	if err := exposeProfileTools(catalog, identity, activeProfile); err != nil {
+		return err
+	}
+	workflowRoot, err := findWorkflowRoot(".")
+	if err != nil {
+		return err
+	}
+	workflowManifest, err := workflowdoc.Load(workflowRoot, "")
+	if err != nil {
+		return err
+	}
+	if _, err := workflowManifest.Render(workflowdoc.RenderContext{
+		Issue: workflowdoc.IssueContext{
+			Owner:        "tclasen",
+			Repo:         "Exaptra",
+			Number:       46,
+			Title:        "Define repository-owned workflow manifests",
+			Instructions: "validate the repository-owned workflow contract before running the example harness",
+			Labels:       []string{"enhancement", "phase:5-orchestration"},
+			Blockers:     []string{"missing prerequisite work"},
+		},
+		FrontMatter: workflowManifest.FrontMatter,
+	}); err != nil {
 		return err
 	}
 	compactor, err := meta.NewStreamCompactor(meta.NewValidator("compact"), s, 3, meta.Identity{Name: "agent", Index: 1}, meta.Identity{Name: identity.Name, Index: identity.Index})
@@ -299,4 +324,25 @@ func exposeProfileTools(catalog *mcp.Catalog, identity mcp.Identity, profile pro
 		return fmt.Errorf("profile %q requires the lookup tool but it was not discovered", profile.Name)
 	}
 	return nil
+}
+
+func findWorkflowRoot(start string) (string, error) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "WORKFLOW.md")); err == nil {
+			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", fmt.Errorf("example run: could not locate WORKFLOW.md from %q", start)
 }

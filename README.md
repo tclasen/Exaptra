@@ -92,6 +92,16 @@ Long-running work can be assigned a deterministic workspace path derived from
 issue identity. The workspace lifecycle keeps claim, reconcile, and release
 state visible so retries can resume the same path and terminal issues can be
 cleaned up without touching unrelated workspaces.
+
+### Workflow Manifests
+
+Repository-owned workflow manifests live in `WORKFLOW.md` at the repo root or
+an explicitly supplied path. A manifest combines typed front matter for
+orchestration policy, prompt fragments, hooks, and runtime settings with a
+strictly rendered Markdown body that can parameterize issue title, labels,
+blockers, and instructions. The workflow file is intended to be the source of
+truth for a task slice rather than an ad hoc inline prompt.
+
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
@@ -117,9 +127,11 @@ The long-term design should make these questions explicit:
 
 ## Current Status
 
-This repository is at the project framing stage. The initial focus is defining
-the architecture, terminology, and boundaries for an externalized agent harness
-with MCP tools and stream-level meta tools.
+This repository now includes the core MVP harness slices for stream handling,
+tool discovery and invocation, permissions, meta transitions, tracker writes,
+execution environments, provider-aligned profiles, workspaces, and repository
+workflow manifests. The remaining work is in finishing the project's higher-
+level orchestration and operational polish.
 
 ## Getting Started
 
@@ -193,6 +205,6 @@ Maintainers can validate the current MVP with:
 
 ```bash
 make validate
-go test ./...
+go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
 go run ./cmd/example-run -config examples/localrun/config.example.json
 ```
