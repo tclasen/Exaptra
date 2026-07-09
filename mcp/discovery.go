@@ -98,6 +98,31 @@ func (c *Catalog) Snapshot() DiscoveryState {
 	}
 }
 
+// LookupExposed returns the currently exposed tool with the given name.
+func (c *Catalog) LookupExposed(name string) (ToolMetadata, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var (
+		found ToolMetadata
+		ok    bool
+	)
+	for _, tool := range c.exposed {
+		if tool.Name != name {
+			continue
+		}
+		if ok {
+			return ToolMetadata{}, fmt.Errorf("tool %q is exposed by multiple providers", name)
+		}
+		found = cloneToolMetadata(tool)
+		ok = true
+	}
+	if !ok {
+		return ToolMetadata{}, nil
+	}
+	return found, nil
+}
+
 func toolKey(identity Identity, name string) string {
 	return identity.String() + ":" + name
 }
