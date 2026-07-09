@@ -42,11 +42,22 @@ type ToolRecord struct {
 	Provenance   *stream.Provenance `json:"provenance,omitempty"`
 }
 
+// ToolTransition records a change to a tool's registry state.
+type ToolTransition struct {
+	Operation string      `json:"operation"`
+	Identity  Identity    `json:"identity"`
+	Name      string      `json:"name"`
+	Reason    string      `json:"reason,omitempty"`
+	Before    *ToolRecord `json:"before,omitempty"`
+	After     *ToolRecord `json:"after,omitempty"`
+}
+
 // DiscoveryState captures discovered tools separately from model exposure.
 type DiscoveryState struct {
-	Records    []ToolRecord   `json:"records"`
-	Discovered []ToolMetadata `json:"discovered"`
-	Exposed    []ToolMetadata `json:"exposed"`
+	Records     []ToolRecord     `json:"records"`
+	Transitions []ToolTransition `json:"transitions"`
+	Discovered  []ToolMetadata   `json:"discovered"`
+	Exposed     []ToolMetadata   `json:"exposed"`
 }
 
 // Discoverer exposes discovered tools for a provider connection.
@@ -57,8 +68,9 @@ type Discoverer interface {
 // Catalog stores discovered tools and the subset currently exposed to the
 // model.
 type Catalog struct {
-	mu      sync.Mutex
-	records map[string]catalogEntry
+	mu          sync.Mutex
+	records     map[string]catalogEntry
+	transitions []ToolTransition
 }
 
 func NewCatalog() *Catalog {
@@ -72,6 +84,25 @@ type catalogEntry struct {
 	availability ToolAvailability
 	reason       string
 	provenance   *stream.Provenance
+}
+
+func (c *Catalog) recordLocked(identity Identity, tool ToolMetadata, availability ToolAvailability, reason, operation string, before *ToolRecord) {
+	key := toolKey(identity, tool.Name)
+	entry := catalogEntry{
+		tool:         cloneToolMetadata(tool),
+		availability: availability,
+		reason:       reason,
+		provenance:   &stream.Provenance{Provider: identity.Name, Component: tool.Name},
+	}
+	c.records[key] = entry
+	c.transitions = append(c.transitions, ToolTransition{
+		Operation: operation,
+		Identity:  identity,
+		Name:      tool.Name,
+		Reason:    reason,
+		Before:    cloneToolRecordPtr(before),
+		After:     recordPtr(entry.toRecord(), true),
+	})
 }
 
 // DiscoverFrom records discovered tools for a specific provider identity.
@@ -93,14 +124,82 @@ func (c *Catalog) DiscoverFrom(ctx context.Context, identity Identity, discovere
 
 	c.mu.Lock()
 	for _, tool := range cloned {
-		c.records[toolKey(identity, tool.Name)] = catalogEntry{
-			tool:         cloneToolMetadata(tool),
-			availability: ToolAvailabilityDiscovered,
-			reason:       "discovered",
-			provenance:   &stream.Provenance{Provider: identity.Name, Component: tool.Name},
-		}
+		c.recordLocked(identity, tool, ToolAvailabilityDiscovered, "discovered", "discover", nil)
 	}
 	c.mu.Unlock()
+
+	return cloned, nil
+}
+
+// RefreshFrom updates the registry from a new discovery pass while preserving
+// existing exposure state and recording add/remove/refresh transitions.
+func (c *Catalog) RefreshFrom(ctx context.Context, identity Identity, discoverer Discoverer) ([]ToolMetadata, error) {
+	if discoverer == nil {
+		return nil, newError(ErrorCategoryProvider, identity.String(), "refresh", "discoverer is required", nil)
+	}
+
+	tools, err := discoverer.DiscoverTools(ctx)
+	if err != nil {
+		return nil, newError(ErrorCategoryDiscovery, identity.String(), "refresh", "refresh provider tools", err)
+	}
+
+	cloned := make([]ToolMetadata, len(tools))
+	for i, tool := range tools {
+		tool.Provider = identity
+		cloned[i] = cloneToolMetadata(tool)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(cloned))
+	for _, tool := range cloned {
+		key := toolKey(identity, tool.Name)
+		seen[key] = struct{}{}
+
+		before, existed := c.records[key]
+		after := catalogEntry{
+			tool:         cloneToolMetadata(tool),
+			availability: ToolAvailabilityDiscovered,
+			reason:       "refreshed from provider",
+			provenance:   &stream.Provenance{Provider: identity.Name, Component: tool.Name},
+		}
+		if existed {
+			after.availability = before.availability
+			after.reason = before.reason
+		}
+
+		c.records[key] = after
+		c.transitions = append(c.transitions, ToolTransition{
+			Operation: "refresh",
+			Identity:  identity,
+			Name:      tool.Name,
+			Reason:    "refreshed from provider",
+			Before:    recordPtr(before.toRecord(), existed),
+			After:     recordPtr(after.toRecord(), true),
+		})
+	}
+
+	for key, entry := range c.records {
+		if entry.tool.Provider != identity {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		before := entry.toRecord()
+		entry.availability = ToolAvailabilityUnavailable
+		entry.reason = "removed during refresh"
+		c.records[key] = entry
+		c.transitions = append(c.transitions, ToolTransition{
+			Operation: "remove",
+			Identity:  identity,
+			Name:      entry.tool.Name,
+			Reason:    entry.reason,
+			Before:    recordPtr(before, true),
+			After:     recordPtr(entry.toRecord(), true),
+		})
+	}
 
 	return cloned, nil
 }
@@ -129,9 +228,18 @@ func (c *Catalog) setAvailability(identity Identity, name string, availability T
 	if !ok {
 		return newError(ErrorCategoryDiscovery, identity.String(), "update", fmt.Sprintf("tool %q is not discovered", name), nil)
 	}
+	before := entry.toRecord()
 	entry.availability = availability
 	entry.reason = reason
 	c.records[key] = entry
+	c.transitions = append(c.transitions, ToolTransition{
+		Operation: availabilityOperation(availability),
+		Identity:  identity,
+		Name:      name,
+		Reason:    reason,
+		Before:    recordPtr(before, true),
+		After:     recordPtr(entry.toRecord(), true),
+	})
 	return nil
 }
 
@@ -148,8 +256,14 @@ func (c *Catalog) Snapshot() DiscoveryState {
 			state.Exposed = append(state.Exposed, cloneToolMetadata(entry.tool))
 		}
 	}
+	for _, transition := range c.transitions {
+		state.Transitions = append(state.Transitions, transition.clone())
+	}
 	sort.Slice(state.Records, func(i, j int) bool {
 		return recordSortKey(state.Records[i]) < recordSortKey(state.Records[j])
+	})
+	sort.Slice(state.Transitions, func(i, j int) bool {
+		return transitionSortKey(state.Transitions[i]) < transitionSortKey(state.Transitions[j])
 	})
 	sort.Slice(state.Discovered, func(i, j int) bool {
 		return metadataSortKey(state.Discovered[i]) < metadataSortKey(state.Discovered[j])
@@ -208,5 +322,55 @@ func (e catalogEntry) toRecord() ToolRecord {
 		Availability: e.availability,
 		Reason:       e.reason,
 		Provenance:   cloneStreamProvenance(e.provenance),
+	}
+}
+
+func cloneToolRecord(record ToolRecord) ToolRecord {
+	record.ToolMetadata = cloneToolMetadata(record.ToolMetadata)
+	record.Provenance = cloneStreamProvenance(record.Provenance)
+	return record
+}
+
+func (t ToolTransition) clone() ToolTransition {
+	return ToolTransition{
+		Operation: t.Operation,
+		Identity:  t.Identity,
+		Name:      t.Name,
+		Reason:    t.Reason,
+		Before:    cloneToolRecordPtr(t.Before),
+		After:     cloneToolRecordPtr(t.After),
+	}
+}
+
+func recordPtr(record ToolRecord, ok bool) *ToolRecord {
+	if !ok {
+		return nil
+	}
+	cloned := cloneToolRecord(record)
+	return &cloned
+}
+
+func cloneToolRecordPtr(record *ToolRecord) *ToolRecord {
+	if record == nil {
+		return nil
+	}
+	cloned := cloneToolRecord(*record)
+	return &cloned
+}
+
+func transitionSortKey(transition ToolTransition) string {
+	return transition.Identity.String() + ":" + transition.Name + ":" + transition.Operation
+}
+
+func availabilityOperation(availability ToolAvailability) string {
+	switch availability {
+	case ToolAvailabilityExposed:
+		return "expose"
+	case ToolAvailabilityHidden:
+		return "hide"
+	case ToolAvailabilityUnavailable:
+		return "remove"
+	default:
+		return "update"
 	}
 }

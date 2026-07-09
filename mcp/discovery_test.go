@@ -144,6 +144,125 @@ func TestCatalogTracksHiddenAndUnavailableReasonsInSnapshot(t *testing.T) {
 	}
 }
 
+func TestCatalogRefreshPreservesExposureAndRecordsTransitions(t *testing.T) {
+	catalog := NewCatalog()
+	identity := Identity{Name: "filesystem", Index: 2}
+
+	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
+		tools: []ToolMetadata{
+			{Name: "lookup", Description: "lookup records", Scope: "read"},
+			{Name: "mutate", Description: "mutate records", Scope: "write"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("discover tools: %v", err)
+	}
+	if err := catalog.Expose(identity, "lookup"); err != nil {
+		t.Fatalf("expose lookup: %v", err)
+	}
+
+	refreshed, err := catalog.RefreshFrom(context.Background(), identity, stubDiscoverer{
+		tools: []ToolMetadata{
+			{Name: "lookup", Description: "updated lookup", Scope: "read"},
+			{Name: "create", Description: "create records", Scope: "write"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("refresh tools: %v", err)
+	}
+	if len(refreshed) != 2 {
+		t.Fatalf("refreshed len = %d, want 2", len(refreshed))
+	}
+
+	snapshot := catalog.Snapshot()
+	if len(snapshot.Exposed) != 1 {
+		t.Fatalf("snapshot exposed len = %d, want 1", len(snapshot.Exposed))
+	}
+	if len(snapshot.Transitions) < 5 {
+		t.Fatalf("snapshot transitions len = %d, want at least 5", len(snapshot.Transitions))
+	}
+
+	records := map[string]ToolRecord{}
+	for _, record := range snapshot.Records {
+		records[record.Name] = record
+	}
+
+	lookup := records["lookup"]
+	if lookup.Availability != ToolAvailabilityExposed {
+		t.Fatalf("lookup availability = %q, want %q", lookup.Availability, ToolAvailabilityExposed)
+	}
+	if lookup.Description != "updated lookup" {
+		t.Fatalf("lookup description = %q, want updated lookup", lookup.Description)
+	}
+
+	mutate := records["mutate"]
+	if mutate.Availability != ToolAvailabilityUnavailable {
+		t.Fatalf("mutate availability = %q, want %q", mutate.Availability, ToolAvailabilityUnavailable)
+	}
+	if mutate.Reason != "removed during refresh" {
+		t.Fatalf("mutate reason = %q, want removed during refresh", mutate.Reason)
+	}
+
+	create := records["create"]
+	if create.Availability != ToolAvailabilityDiscovered {
+		t.Fatalf("create availability = %q, want %q", create.Availability, ToolAvailabilityDiscovered)
+	}
+
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"operation":"refresh"`) || !strings.Contains(string(encoded), `"operation":"remove"`) {
+		t.Fatalf("snapshot json does not include refresh transitions: %s", encoded)
+	}
+}
+
+func TestCatalogExposureUpdatesAffectLookupAndVisibleTools(t *testing.T) {
+	catalog := NewCatalog()
+	identity := Identity{Name: "filesystem", Index: 3}
+
+	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
+		tools: []ToolMetadata{{Name: "lookup", Description: "lookup records", Scope: "read"}},
+	})
+	if err != nil {
+		t.Fatalf("discover tools: %v", err)
+	}
+
+	if err := catalog.Expose(identity, "lookup"); err != nil {
+		t.Fatalf("expose tool: %v", err)
+	}
+	if _, err := catalog.LookupExposed("lookup"); err != nil {
+		t.Fatalf("lookup exposed tool: %v", err)
+	}
+	if len(catalog.Snapshot().Exposed) != 1 {
+		t.Fatal("expected exposed tool to be visible")
+	}
+
+	if err := catalog.Hide(identity, "lookup", "hidden by policy"); err != nil {
+		t.Fatalf("hide tool: %v", err)
+	}
+	if tool, err := catalog.LookupExposed("lookup"); err != nil || tool.Name != "" {
+		t.Fatalf("lookup remained exposed after hide: %+v err=%v", tool, err)
+	}
+	if len(catalog.Snapshot().Exposed) != 0 {
+		t.Fatal("expected hidden tool to be removed from exposed view")
+	}
+
+	if err := catalog.Expose(identity, "lookup"); err != nil {
+		t.Fatalf("re-expose tool: %v", err)
+	}
+	tool, err := catalog.LookupExposed("lookup")
+	if err != nil {
+		t.Fatalf("lookup re-exposed tool: %v", err)
+	}
+	if tool.Name != "lookup" {
+		t.Fatalf("re-exposed tool name = %q, want lookup", tool.Name)
+	}
+	if len(catalog.Snapshot().Exposed) != 1 {
+		t.Fatal("expected re-exposed tool to be visible again")
+	}
+}
+
 func TestCatalogReturnsStructuredErrorForDiscoveryFailure(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "broken", Index: 1}
