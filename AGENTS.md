@@ -76,6 +76,23 @@ specific task:
    work.
 3. If nothing is hanging, follow the Next Task Requests workflow.
 
+## Human-On-The-Loop
+
+When a task needs additional human feedback or approval:
+
+- Tag the user in the issue thread and pause that work until feedback arrives.
+- When feedback arrives, apply it before continuing, and ask follow-up
+  questions only if they are required to proceed.
+- For high-risk or high-importance pull requests, request review from the
+  project human expert before merging. Infer the best reviewer from repository
+  ownership, maintainership metadata, or recent relevant commit history.
+- If the project human expert leaves feedback on a pull request, address it and
+  request a new review before merging.
+- If a task is blocked waiting for human approval or feedback, switch to any
+  other unblocked work instead of waiting on the blocked task.
+- Use the inferred project human expert as the default reviewer for
+  human-on-the-loop checks.
+
 ## Small Batches
 
 Keep each batch focused on one intent:
