@@ -9,17 +9,19 @@ import (
 	"sync"
 
 	"github.com/tclasen/Exaptra/config"
+	"github.com/tclasen/Exaptra/execution"
 )
 
 // ErrorCategory identifies provider lifecycle failures.
 type ErrorCategory string
 
 const (
-	ErrorCategoryProvider   ErrorCategory = "provider"
-	ErrorCategoryLifecycle  ErrorCategory = "lifecycle"
-	ErrorCategoryConnection ErrorCategory = "connection"
-	ErrorCategoryTool       ErrorCategory = "tool"
-	ErrorCategoryPermission ErrorCategory = "permission"
+	ErrorCategoryProvider    ErrorCategory = "provider"
+	ErrorCategoryLifecycle   ErrorCategory = "lifecycle"
+	ErrorCategoryConnection  ErrorCategory = "connection"
+	ErrorCategoryEnvironment ErrorCategory = "environment"
+	ErrorCategoryTool        ErrorCategory = "tool"
+	ErrorCategoryPermission  ErrorCategory = "permission"
 )
 
 // Error is the structured error returned by the MCP lifecycle layer.
@@ -140,8 +142,16 @@ func (r *Registry) Open(ctx context.Context, cfg config.MCPProvider, index int) 
 		return nil, newError(ErrorCategoryProvider, cfg.Name, "open", "provider command is required", nil)
 	}
 
-	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
-	cmd.Env = append(os.Environ(), flattenEnv(cfg.Env)...)
+	kind, err := execution.ParseKind(cfg.Execution.Kind)
+	if err != nil {
+		return nil, newError(ErrorCategoryEnvironment, Identity{Name: cfg.Name, Index: index}.String(), "resolve", "resolve provider backend", err)
+	}
+	cfg.Execution.Kind = kind.String()
+
+	cmd, err := execution.DefaultRegistry().Build(ctx, cfg)
+	if err != nil {
+		return nil, newError(ErrorCategoryEnvironment, Identity{Name: cfg.Name, Index: index}.String(), "build", "build provider command", err)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, newError(ErrorCategoryConnection, Identity{Name: cfg.Name, Index: index}.String(), "start", "start provider process", err)
 	}
@@ -184,15 +194,4 @@ func (r *Registry) Connection(identity Identity) (*Connection, bool) {
 	defer r.mu.Unlock()
 	conn, ok := r.connections[identity.String()]
 	return conn, ok
-}
-
-func flattenEnv(env map[string]string) []string {
-	if len(env) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, fmt.Sprintf("%s=%s", k, v))
-	}
-	return out
 }

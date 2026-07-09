@@ -10,6 +10,9 @@
     {
       "name": "localrun",
       "command": "builtin",
+      "execution": {
+        "kind": "local"
+      },
       "env": {
         "EXAPTRA_TOKEN": "example-provider-token"
       }
