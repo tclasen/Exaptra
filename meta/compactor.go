@@ -91,6 +91,14 @@ func (c *StreamCompactor) Compact(s *stream.Stream) (AuditRecord, error) {
 	return audit, nil
 }
 
+// Audits returns the compactor audit trail.
+func (c *StreamCompactor) Audits() []AuditRecord {
+	if c == nil || c.store == nil {
+		return nil
+	}
+	return c.store.Audits()
+}
+
 func countsJSON(t stream.Trajectory) json.RawMessage {
 	payload := fmt.Sprintf(`{"items":%d,"meta_transitions":%d}`, len(t.Items), len(t.MetaTransitions))
 	return json.RawMessage(payload)

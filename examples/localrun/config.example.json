@@ -1,0 +1,25 @@
+{
+  "model": {
+    "provider": "local",
+    "name": "example-model",
+    "api_key": {
+      "env": "EXAPTRA_MODEL_API_KEY"
+    }
+  },
+  "mcp_providers": [
+    {
+      "name": "localrun",
+      "command": "builtin"
+    }
+  ],
+  "tool_policy": {
+    "mode": "allow_all"
+  },
+  "permissions": {
+    "mode": "deny_by_default"
+  },
+  "debug": {
+    "trace": true,
+    "audit": true
+  }
+}
