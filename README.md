@@ -1,0 +1,85 @@
+# Exaptra
+
+Exaptra is an experimental agent harness designed around one core principle:
+every meaningful part of an agent should be externalized, inspectable, and
+replaceable.
+
+The project aims to separate the agent runtime from the capabilities it uses.
+Instead of embedding native tools directly into the harness, Exaptra will use
+external tool providers, starting with MCP, so tool access, permissions,
+configuration, and behavior can be managed outside the core agent loop.
+
+## Objectives
+
+- Build an agent harness with a small, explicit runtime core.
+- Externalize tools, memory, context management, references, and other agent
+  capabilities wherever possible.
+- Support MCP as the primary mechanism for exposing tools to agents.
+- Avoid native built-in tools in the harness itself.
+- Make tool availability and top-level agent capabilities dynamic rather than
+  fixed at startup.
+- Provide a model for advanced stream-level capabilities through meta tools.
+
+## Core Concepts
+
+### Externalized Tools
+
+In Exaptra, tools are not intended to be hardcoded into the agent runtime. The
+harness should discover and use tools through external interfaces such as MCP.
+This keeps the runtime smaller and makes tool behavior easier to audit, replace,
+compose, and permission independently.
+
+### Meta Tools
+
+Meta tools are a proposed class of tool that operate on the conversation or
+agent state at a higher level than ordinary tools.
+
+Traditional tools append results back into the chat stream. A meta tool can
+instead operate on the stream itself or on the top-level agent configuration
+around that stream. This allows capabilities that change how the agent sees,
+stores, compresses, or extends its working context.
+
+Examples of meta tool capabilities include:
+
+- Compaction of long conversation history.
+- Memory creation, recall, update, and deletion.
+- Progressive disclosure of context and references.
+- Adding or removing available tools.
+- Adding or removing top-level references or resources.
+- Rewriting, filtering, or restructuring parts of the working stream.
+
+### Agent Stream
+
+The agent stream is the working context the agent uses to reason and act. In
+most systems, this is treated as an append-only chat log. Exaptra treats the
+stream as a managed runtime object that can be inspected and transformed by
+authorized meta tools.
+
+## Design Direction
+
+Exaptra is intended to explore an agent architecture where the core harness is
+responsible for orchestration, policy boundaries, and state transitions, while
+capabilities are supplied externally.
+
+The long-term design should make these questions explicit:
+
+- What capabilities are available to the agent?
+- Where did each capability come from?
+- What permissions does each capability have?
+- What parts of the stream or runtime state can it read or modify?
+- How are changes to the stream represented, validated, and audited?
+- How can capabilities be added, removed, or scoped during a run?
+
+## Non-Goals
+
+- Embedding a large standard library of native tools in the harness.
+- Treating the chat stream as the only place where agent state can change.
+- Hiding memory, compaction, or context management behind implicit runtime
+  behavior.
+- Coupling the agent runtime to a single provider, model, or tool transport.
+
+## Current Status
+
+This repository is at the project framing stage. The initial focus is defining
+the architecture, terminology, and boundaries for an externalized agent harness
+with MCP tools and stream-level meta tools.
