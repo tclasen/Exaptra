@@ -12,6 +12,7 @@ import (
 	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
+	"github.com/tclasen/Exaptra/workflow"
 )
 
 type stubDiscoverer struct {
@@ -113,6 +114,25 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			},
 		},
 	}
+	workflowTrace := workflow.Trace{
+		PlanID: "example",
+		Records: []workflow.Record{{
+			PlanID: "example",
+			Node: workflow.Node{
+				ID:     "lookup",
+				Kind:   workflow.NodeKindTask,
+				Action: "lookup",
+			},
+			Status:     workflow.StatusCompleted,
+			Output:     json.RawMessage(`{"result":"lookup example"}`),
+			Provenance: &stream.Provenance{Source: "workflow", Component: "lookup", TraceID: "trace-lookup"},
+		}},
+		Plan: &workflow.Plan{
+			ID:    "example",
+			Start: "lookup",
+			Nodes: []workflow.Node{{ID: "lookup", Kind: workflow.NodeKindTask, Action: "lookup"}},
+		},
+	}
 
 	catalog := mcp.NewCatalog()
 	catalog.Permissions().GrantMutations("test")
@@ -137,7 +157,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), &batch)
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), &batch, &workflowTrace)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -162,6 +182,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"orchestration":{"parent_run_id":"run-1","max_concurrency":2,"completed":2,"failed":0`) || !strings.Contains(string(encoded), `"trace-research"`) {
 		t.Fatalf("snapshot missing orchestration data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
+		t.Fatalf("snapshot missing workflow data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

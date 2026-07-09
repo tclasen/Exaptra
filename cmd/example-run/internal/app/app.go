@@ -15,6 +15,7 @@ import (
 	"github.com/tclasen/Exaptra/runtrace"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
+	"github.com/tclasen/Exaptra/workflow"
 )
 
 // Run executes the runnable example and writes the serialized run snapshot.
@@ -52,70 +53,13 @@ func Run(args []string, stdout io.Writer) error {
 		identity.String(): provider,
 	})
 
-	call, err := stream.FunctionCall("fc_1", 2, "lookup", "call_1", json.RawMessage(`{"query":"example"}`), provenance)
-	if err != nil {
-		return err
-	}
-	if _, err := dispatcher.Invoke(context.Background(), s, call); err != nil {
-		return err
-	}
-	if err := s.Append(stream.AssistantMessage("msg_2", 4, "the example record was found", provenance)); err != nil {
-		return err
-	}
-
 	compactor, err := meta.NewStreamCompactor(meta.NewValidator("compact"), s, 3, meta.Identity{Name: "agent", Index: 1}, meta.Identity{Name: identity.Name, Index: identity.Index})
 	if err != nil {
-		return err
-	}
-	if _, err := compactor.Compact(s); err != nil {
 		return err
 	}
 
 	trackerStore := tracker.NewStore(nil)
 	issue := tracker.IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
-	if _, err := trackerStore.Comment(context.Background(), tracker.CommentRequest{
-		RunID: "example-run",
-		Issue: issue,
-		Body:  "compaction complete; ready for review",
-		Provenance: tracker.Provenance{
-			RunID:     "example-run",
-			Source:    "example-run",
-			Component: "tracker",
-		},
-	}); err != nil {
-		return err
-	}
-	if _, err := trackerStore.SetState(context.Background(), tracker.StateRequest{
-		RunID:  "example-run",
-		Issue:  issue,
-		State:  tracker.HandoffStateReview,
-		Reason: "workflow-defined review state",
-		Provenance: tracker.Provenance{
-			RunID:     "example-run",
-			Source:    "example-run",
-			Component: "tracker",
-		},
-	}); err != nil {
-		return err
-	}
-	if _, err := trackerStore.LinkPullRequest(context.Background(), tracker.PullRequestLinkRequest{
-		RunID: "example-run",
-		Issue: issue,
-		PullRequest: tracker.PullRequestRef{
-			Owner:  "tclasen",
-			Repo:   "Exaptra",
-			Number: 99,
-			URL:    "https://github.com/tclasen/Exaptra/pull/99",
-		},
-		State: tracker.HandoffStateReview,
-		Provenance: tracker.Provenance{
-			RunID:     "example-run",
-			Source:    "example-run",
-			Component: "tracker",
-		},
-	}); err != nil {
-		return err
-	}
 
 	executor := orchestration.NewExecutor(orchestration.WorkerFunc(func(ctx context.Context, task orchestration.Task) (orchestration.TaskResult, error) {
 		payload, err := json.Marshal(map[string]any{
@@ -140,18 +84,154 @@ func Run(args []string, stdout io.Writer) error {
 			},
 		}, nil
 	}), 2)
-	batch, err := executor.Execute(context.Background(), orchestration.Batch{
-		ParentRunID: "example-run",
-		Tasks: []orchestration.Task{
-			{ID: "research", Prompt: "summarize the lookup output", Workspace: "shared", SharedWorkspace: true, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
-			{ID: "validate", Prompt: "confirm handoff state and tracker writes", Workspace: "review", SharedWorkspace: false, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+	var fanoutAggregate *orchestration.Aggregate
+	workflowExecutor := workflow.NewExecutor(workflow.NodeRunnerFunc(func(ctx context.Context, node workflow.Node) (workflow.TaskResult, error) {
+		switch node.Action {
+		case "lookup":
+			call, err := stream.FunctionCall("fc_1", 2, "lookup", "call_1", json.RawMessage(`{"query":"example"}`), provenance)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			result, err := dispatcher.Invoke(ctx, s, call)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			if err := s.Append(stream.AssistantMessage("msg_2", 4, "the example record was found", provenance)); err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{
+				Output:     json.RawMessage(result.Output),
+				Provenance: result.Provenance,
+			}, nil
+		case "compact":
+			if _, err := compactor.Compact(s); err != nil {
+				return workflow.TaskResult{}, err
+			}
+			payload, err := json.Marshal(map[string]any{
+				"items":            len(s.Trajectory().Items),
+				"meta_transitions": len(s.Trajectory().MetaTransitions),
+			})
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{
+				Output: payload,
+				Provenance: &stream.Provenance{
+					Source:    "workflow",
+					Provider:  cfg.Model.Provider,
+					Component: "compact",
+				},
+			}, nil
+		case "tracker_comment":
+			audit, err := trackerStore.Comment(ctx, tracker.CommentRequest{
+				RunID: "example-run",
+				Issue: issue,
+				Body:  "compaction complete; ready for review",
+				Provenance: tracker.Provenance{
+					RunID:     "example-run",
+					Source:    "example-run",
+					Component: "tracker",
+				},
+			})
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			payload, err := json.Marshal(audit)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{Output: payload}, nil
+		case "tracker_state":
+			audit, err := trackerStore.SetState(ctx, tracker.StateRequest{
+				RunID:  "example-run",
+				Issue:  issue,
+				State:  tracker.HandoffStateReview,
+				Reason: "workflow-defined review state",
+				Provenance: tracker.Provenance{
+					RunID:     "example-run",
+					Source:    "example-run",
+					Component: "tracker",
+				},
+			})
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			payload, err := json.Marshal(audit)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{Output: payload}, nil
+		case "tracker_link":
+			audit, err := trackerStore.LinkPullRequest(ctx, tracker.PullRequestLinkRequest{
+				RunID: "example-run",
+				Issue: issue,
+				PullRequest: tracker.PullRequestRef{
+					Owner:  "tclasen",
+					Repo:   "Exaptra",
+					Number: 99,
+					URL:    "https://github.com/tclasen/Exaptra/pull/99",
+				},
+				State: tracker.HandoffStateReview,
+				Provenance: tracker.Provenance{
+					RunID:     "example-run",
+					Source:    "example-run",
+					Component: "tracker",
+				},
+			})
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			payload, err := json.Marshal(audit)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{Output: payload}, nil
+		case "fanout":
+			aggregate, err := executor.Execute(ctx, orchestration.Batch{
+				ParentRunID: "example-run",
+				Tasks: []orchestration.Task{
+					{ID: "research", Prompt: "summarize the lookup output", Workspace: "shared", SharedWorkspace: true, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+					{ID: "validate", Prompt: "confirm handoff state and tracker writes", Workspace: "review", SharedWorkspace: false, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+				},
+			})
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			fanoutAggregate = &aggregate
+			payload, err := json.Marshal(aggregate)
+			if err != nil {
+				return workflow.TaskResult{}, err
+			}
+			return workflow.TaskResult{Output: payload}, nil
+		default:
+			return workflow.TaskResult{}, fmt.Errorf("unknown workflow action %q", node.Action)
+		}
+	}))
+	workflowTrace, err := workflowExecutor.Execute(context.Background(), workflow.Plan{
+		ID:    "example",
+		Start: "lookup",
+		Nodes: []workflow.Node{
+			{ID: "lookup", Kind: workflow.NodeKindTask, Action: "lookup", OnSuccess: "check_lookup"},
+			{ID: "check_lookup", Kind: workflow.NodeKindGate, OutputContains: "lookup example", OnMatch: "compact"},
+			{ID: "compact", Kind: workflow.NodeKindTask, Action: "compact", OnSuccess: "handoff"},
+			{ID: "handoff", Kind: workflow.NodeKindSubplan, Subplan: "handoff"},
 		},
+		Subplans: []workflow.Plan{{
+			ID:    "handoff",
+			Start: "comment",
+			Nodes: []workflow.Node{
+				{ID: "comment", Kind: workflow.NodeKindTask, Action: "tracker_comment", OnSuccess: "state"},
+				{ID: "state", Kind: workflow.NodeKindTask, Action: "tracker_state", OnSuccess: "link"},
+				{ID: "link", Kind: workflow.NodeKindTask, Action: "tracker_link", OnSuccess: "fanout"},
+				{ID: "fanout", Kind: workflow.NodeKindTask, Action: "fanout"},
+			},
+		}},
 	})
 	if err != nil {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &batch)
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), fanoutAggregate, &workflowTrace)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
