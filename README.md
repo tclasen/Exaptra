@@ -186,7 +186,12 @@ plain text.
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
 tracker audit records, provider profile, orchestration results, workflow graph
-traces, tool registry state, and meta audit records.
+traces, decision-path correlation links, tool registry state, and meta audit
+records.
+
+Decision-path correlation links run, thread, issue, stream, workflow,
+orchestration, and tracker records through stable trace identifiers without
+including prompt text, tracker comment bodies, or secret values.
 
 ## MVP Limitations
 

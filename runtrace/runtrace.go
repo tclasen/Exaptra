@@ -25,10 +25,11 @@ type Snapshot struct {
 	Workspace     *workspace.Snapshot      `json:"workspace,omitempty"`
 	Orchestration *orchestration.Aggregate `json:"orchestration,omitempty"`
 	Workflow      *workflow.Trace          `json:"workflow,omitempty"`
+	Correlation   *CorrelationPath         `json:"correlation,omitempty"`
 }
 
 // NewSnapshot collects a redacted, serializable run snapshot.
-func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, profile *profiles.Selection, workspaceSnapshot *workspace.Snapshot, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace) Snapshot {
+func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, profile *profiles.Selection, workspaceSnapshot *workspace.Snapshot, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace, correlationPath *CorrelationPath) Snapshot {
 	var registry mcp.DiscoveryState
 	if catalog != nil {
 		registry = catalog.Snapshot()
@@ -47,6 +48,7 @@ func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audi
 		Workspace:     cloneWorkspaceSnapshot(workspaceSnapshot),
 		Orchestration: orchestration.CloneAggregate(orchestrationAggregate),
 		Workflow:      workflow.CloneTrace(workflowTrace),
+		Correlation:   cloneCorrelationPath(correlationPath),
 	}
 }
 
