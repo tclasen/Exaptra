@@ -68,6 +68,12 @@ Long-horizon tasks can be decomposed into bounded fan-out batches of subagent
 work, then merged back into a parent run with ordered outcomes and explicit
 provenance for each result.
 
+### Graph Plans
+
+Run stages can also be represented as graph plans with gates and reusable
+subpipelines. A graph trace records the plan structure, branching decisions,
+and nested subplan execution so the run can be inspected or replayed later.
+
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
@@ -149,8 +155,8 @@ plain text.
 
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
-tracker audit records, orchestration results, tool registry state, and meta
-audit records.
+tracker audit records, orchestration results, workflow graph traces, tool
+registry state, and meta audit records.
 
 ## MVP Limitations
 
