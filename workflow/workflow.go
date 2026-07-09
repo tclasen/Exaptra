@@ -179,7 +179,7 @@ func (e *Executor) runPlan(ctx context.Context, plan Plan, depth int) (Trace, er
 				record.Error = err.Error()
 			}
 			trace.appendRecord(record)
-			if err != nil || subtrace.Failed > 0 {
+			if err != nil || !traceSucceeded(subtrace) {
 				current = node.OnFailure
 			} else {
 				current = node.OnSuccess
@@ -327,10 +327,10 @@ func (t *Trace) appendRecord(record Record) {
 
 // Validate ensures the plan is structurally sound and free of cycles.
 func (p Plan) Validate() error {
-	return validatePlan(p, map[string]struct{}{}, map[string]struct{}{})
+	return validatePlan(p, map[string]struct{}{})
 }
 
-func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error {
+func validatePlan(plan Plan, recursionStack map[string]struct{}) error {
 	if plan.ID == "" {
 		return errors.New("workflow: plan id is required")
 	}
@@ -340,10 +340,6 @@ func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error 
 	if _, ok := recursionStack[plan.ID]; ok {
 		return fmt.Errorf("workflow: plan %q recursively references itself", plan.ID)
 	}
-	if _, ok := defined[plan.ID]; ok {
-		return fmt.Errorf("workflow: plan %q is defined more than once", plan.ID)
-	}
-	defined[plan.ID] = struct{}{}
 	recursionStack[plan.ID] = struct{}{}
 	defer delete(recursionStack, plan.ID)
 
@@ -376,6 +372,17 @@ func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error 
 		return fmt.Errorf("workflow: plan %q start node %q does not exist", plan.ID, plan.Start)
 	}
 
+	subplanIDs := make(map[string]struct{}, len(plan.Subplans))
+	for _, subplan := range plan.Subplans {
+		if subplan.ID == "" {
+			return fmt.Errorf("workflow: plan %q contains a subplan without an id", plan.ID)
+		}
+		if _, ok := subplanIDs[subplan.ID]; ok {
+			return fmt.Errorf("workflow: plan %q contains duplicate subplan id %q", plan.ID, subplan.ID)
+		}
+		subplanIDs[subplan.ID] = struct{}{}
+	}
+
 	for _, node := range plan.Nodes {
 		switch node.Kind {
 		case NodeKindTask:
@@ -403,7 +410,7 @@ func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error 
 	}
 
 	for _, subplan := range plan.Subplans {
-		if err := validatePlan(subplan, defined, recursionStack); err != nil {
+		if err := validatePlan(subplan, recursionStack); err != nil {
 			return err
 		}
 	}

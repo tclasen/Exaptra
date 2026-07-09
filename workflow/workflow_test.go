@@ -139,8 +139,40 @@ func TestPlanValidationRejectsMissingReferencesAndCycles(t *testing.T) {
 			{ID: "shared", Start: "b", Nodes: []Node{{ID: "b", Kind: NodeKindTask, Action: "compact"}}},
 		},
 	}
-	if err := duplicateSubplans.Validate(); err == nil || !strings.Contains(err.Error(), "defined more than once") {
+	if err := duplicateSubplans.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate subplan id") {
 		t.Fatalf("duplicate subplan validation = %v", err)
+	}
+}
+
+func TestPlanValidationAllowsScopedSubplanIds(t *testing.T) {
+	plan := Plan{
+		ID:    "scoped",
+		Start: "left",
+		Nodes: []Node{
+			{ID: "left", Kind: NodeKindSubplan, Subplan: "left"},
+			{ID: "right", Kind: NodeKindSubplan, Subplan: "right"},
+		},
+		Subplans: []Plan{
+			{
+				ID:    "left",
+				Start: "shared",
+				Nodes: []Node{{ID: "shared", Kind: NodeKindTask, Action: "lookup"}},
+				Subplans: []Plan{
+					{ID: "nested", Start: "shared", Nodes: []Node{{ID: "shared", Kind: NodeKindTask, Action: "compact"}}},
+				},
+			},
+			{
+				ID:    "right",
+				Start: "shared",
+				Nodes: []Node{{ID: "shared", Kind: NodeKindTask, Action: "lookup"}},
+				Subplans: []Plan{
+					{ID: "nested", Start: "shared", Nodes: []Node{{ID: "shared", Kind: NodeKindTask, Action: "compact"}}},
+				},
+			},
+		},
+	}
+	if err := plan.Validate(); err != nil {
+		t.Fatalf("scoped subplan validation unexpectedly failed: %v", err)
 	}
 }
 
