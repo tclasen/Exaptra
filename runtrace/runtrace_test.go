@@ -11,6 +11,7 @@ import (
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/profiles"
+	"github.com/tclasen/Exaptra/spend"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
@@ -135,6 +136,27 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			Nodes: []workflow.Node{{ID: "lookup", Kind: workflow.NodeKindTask, Action: "lookup"}},
 		},
 	}
+	spendReport := spend.Report{
+		WindowSize: "1h0m0s",
+		Windows: []spend.Window{{
+			Provider:         "openai",
+			Model:            "gpt-4.1",
+			WindowFrom:       "2026-07-09T10:00:00Z",
+			WindowTo:         "2026-07-09T11:00:00Z",
+			Runs:             1,
+			InputTokens:      100,
+			OutputTokens:     50,
+			TotalTokens:      150,
+			EstimatedCostUSD: 0.0025,
+			Alerts: []spend.Alert{{
+				Status:    spend.AlertStatusBreached,
+				Budget:    "hourly",
+				Metric:    "tokens",
+				Observed:  150,
+				Threshold: 100,
+			}},
+		}},
+	}
 	profileSelection := &profiles.Selection{
 		Name:        "local-example",
 		Provider:    "local",
@@ -183,7 +205,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace)
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace, &spendReport)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -217,6 +239,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
 		t.Fatalf("snapshot missing workflow data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"spend":{"window_size":"1h0m0s"`) || !strings.Contains(string(encoded), `"status":"breached"`) {
+		t.Fatalf("snapshot missing spend trend data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

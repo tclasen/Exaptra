@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tclasen/Exaptra/config"
 	"github.com/tclasen/Exaptra/examples/localrun"
@@ -16,6 +17,7 @@ import (
 	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/runtrace"
+	"github.com/tclasen/Exaptra/spend"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
@@ -280,7 +282,32 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace)
+	spendWindow, err := time.ParseDuration(cfg.Spend.Window)
+	if err != nil {
+		return fmt.Errorf("example run: parse spend window: %w", err)
+	}
+	spendReport := spend.Summarize([]spend.Usage{
+		{
+			RunID:            "example-run",
+			Provider:         cfg.Model.Provider,
+			Model:            cfg.Model.Name,
+			ObservedAt:       time.Date(2026, 7, 9, 20, 0, 0, 0, time.UTC),
+			InputTokens:      320,
+			OutputTokens:     140,
+			EstimatedCostUSD: spend.EstimateCostUSD(320, 140, 0.0, 0.0),
+		},
+		{
+			RunID:            "example-run",
+			Provider:         cfg.Model.Provider,
+			Model:            cfg.Model.Name,
+			ObservedAt:       time.Date(2026, 7, 9, 20, 15, 0, 0, time.UTC),
+			InputTokens:      120,
+			OutputTokens:     60,
+			EstimatedCostUSD: spend.EstimateCostUSD(120, 60, 0.0, 0.0),
+		},
+	}, spendBudgets(cfg.Spend.Budgets), spendWindow)
+
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace, &spendReport)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
@@ -289,6 +316,20 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 	return nil
+}
+
+func spendBudgets(budgets []config.SpendBudget) []spend.Budget {
+	out := make([]spend.Budget, len(budgets))
+	for i, budget := range budgets {
+		out[i] = spend.Budget{
+			Name:       budget.Name,
+			Provider:   budget.Provider,
+			Model:      budget.Model,
+			MaxTokens:  budget.MaxTokens,
+			MaxCostUSD: budget.MaxCostUSD,
+		}
+	}
+	return out
 }
 
 type resolverMap map[string]mcp.ToolCaller

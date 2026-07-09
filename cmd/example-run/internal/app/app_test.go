@@ -19,6 +19,7 @@ func TestRunProducesSerializedExampleSnapshot(t *testing.T) {
 		"mcp_providers": [{"name":"localrun","command":"builtin","execution":{"kind":"local"}}],
 		"tool_policy": {"mode":"allow_all"},
 		"permissions": {"mode":"deny_by_default"},
+		"spend": {"window":"1h","currency":"USD","budgets":[{"name":"example-hourly","provider":"local","model":"example-model","max_tokens":500}]},
 		"debug": {"trace": true, "audit": true}
 	}`), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -35,7 +36,7 @@ func TestRunProducesSerializedExampleSnapshot(t *testing.T) {
 	if strings.Contains(output, "example-secret") {
 		t.Fatalf("example run leaked secret: %s", output)
 	}
-	for _, needle := range []string{`"type": "function_call"`, `"type": "function_call_output"`, `"type": "exaptra:meta_transition"`, `"type": "exaptra:tracker_comment"`, `"type": "exaptra:tracker_pr_link"`, `"state": "review_ready"`, `"pull_request": {`, `"profile": {`, `"orchestration": {`, `"workflow": {`, `"kind": "gate"`, `"[local/example-model:research] summarize the lookup output"`, `"[local/example-model:validate] confirm handoff state and tracker writes"`, `"shared_workspace": true`, `"availability": "exposed"`, `"api_key": ""`} {
+	for _, needle := range []string{`"type": "function_call"`, `"type": "function_call_output"`, `"type": "exaptra:meta_transition"`, `"type": "exaptra:tracker_comment"`, `"type": "exaptra:tracker_pr_link"`, `"state": "review_ready"`, `"pull_request": {`, `"profile": {`, `"orchestration": {`, `"workflow": {`, `"spend": {`, `"total_tokens": 640`, `"status": "breached"`, `"kind": "gate"`, `"[local/example-model:research] summarize the lookup output"`, `"[local/example-model:validate] confirm handoff state and tracker writes"`, `"shared_workspace": true`, `"availability": "exposed"`, `"api_key": ""`} {
 		if !strings.Contains(output, needle) {
 			t.Fatalf("example output missing %q: %s", needle, output)
 		}

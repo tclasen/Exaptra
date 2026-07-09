@@ -6,7 +6,7 @@ cd "$ROOT"
 
 export EXAPTRA_MODEL_API_KEY="${EXAPTRA_MODEL_API_KEY:-validation-secret}"
 
-go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
+go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./spend ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
 
 output="$(go run ./cmd/example-run -config examples/localrun/config.example.json)"
 
@@ -24,6 +24,9 @@ printf '%s\n' "$output" | grep -Fq '"workspace": {'
 printf '%s\n' "$output" | grep -Fq '.exaptra/workspaces/tclasen/exaptra/52'
 printf '%s\n' "$output" | grep -Fq '"orchestration": {'
 printf '%s\n' "$output" | grep -Fq '"workflow": {'
+printf '%s\n' "$output" | grep -Fq '"spend": {'
+printf '%s\n' "$output" | grep -Fq '"total_tokens": 640'
+printf '%s\n' "$output" | grep -Fq '"status": "breached"'
 printf '%s\n' "$output" | grep -Fq '"kind": "gate"'
 printf '%s\n' "$output" | grep -Fq '[local/example-model:research] summarize the lookup output'
 printf '%s\n' "$output" | grep -Fq '[local/example-model:validate] confirm handoff state and tracker writes'

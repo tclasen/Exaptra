@@ -24,6 +24,19 @@
   "permissions": {
     "mode": "deny_by_default"
   },
+  "spend": {
+    "window": "1h",
+    "currency": "USD",
+    "budgets": [
+      {
+        "name": "example-hourly",
+        "provider": "local",
+        "model": "example-model",
+        "max_tokens": 500,
+        "max_cost_usd": 0.01
+      }
+    ]
+  },
   "debug": {
     "trace": true,
     "audit": true

@@ -23,6 +23,11 @@ func TestLoadResolvesEnvironmentSecretReference(t *testing.T) {
 		],
 		"tool_policy": {"mode": "allow_list", "tools": ["filesystem.read"]},
 		"permissions": {"mode": "deny_by_default", "tools": ["compact"]},
+		"spend": {
+			"window": "1h",
+			"currency": "USD",
+			"budgets": [{"name": "openai-hourly", "provider": "openai", "max_tokens": 1000, "max_cost_usd": 0.25}]
+		},
 		"debug": {"trace": true, "audit": false}
 	}`)
 
@@ -43,6 +48,9 @@ func TestLoadResolvesEnvironmentSecretReference(t *testing.T) {
 	if !cfg.Debug.Trace || cfg.Debug.Audit {
 		t.Fatalf("debug config not loaded correctly: %+v", cfg.Debug)
 	}
+	if cfg.Spend.Window != "1h" || cfg.Spend.Currency != "USD" || len(cfg.Spend.Budgets) != 1 {
+		t.Fatalf("spend config not loaded correctly: %+v", cfg.Spend)
+	}
 }
 
 func TestLoadRejectsMissingRequiredFields(t *testing.T) {
@@ -51,6 +59,7 @@ func TestLoadRejectsMissingRequiredFields(t *testing.T) {
 		"mcp_providers": [],
 		"tool_policy": {"mode": "allow_list"},
 		"permissions": {"mode": "deny_by_default"},
+		"spend": {"window": "1h", "currency": "USD"},
 		"debug": {"trace": true, "audit": false}
 	}`)
 
@@ -80,6 +89,7 @@ func TestLoadFailsWhenSecretEnvVarIsUnset(t *testing.T) {
 		],
 		"tool_policy": {"mode": "allow_list"},
 		"permissions": {"mode": "deny_by_default"},
+		"spend": {"window": "1h", "currency": "USD"},
 		"debug": {"trace": true, "audit": false}
 	}`)
 
@@ -94,5 +104,40 @@ func TestLoadFailsWhenSecretEnvVarIsUnset(t *testing.T) {
 	}
 	if configErr.Category != ErrorCategoryConfig {
 		t.Fatalf("category = %q, want %q", configErr.Category, ErrorCategoryConfig)
+	}
+}
+
+func TestLoadRejectsInvalidSpendBudget(t *testing.T) {
+	t.Setenv("EXAPTRA_MODEL_API_KEY", "secret-from-env")
+
+	raw := []byte(`{
+		"model": {
+			"provider": "openai",
+			"name": "gpt-4.1",
+			"api_key": {"env": "EXAPTRA_MODEL_API_KEY"}
+		},
+		"mcp_providers": [
+			{"name": "filesystem", "command": "npx"}
+		],
+		"tool_policy": {"mode": "allow_list"},
+		"permissions": {"mode": "deny_by_default"},
+		"spend": {
+			"window": "1h",
+			"currency": "USD",
+			"budgets": [{"name": "empty"}]
+		},
+		"debug": {"trace": true, "audit": false}
+	}`)
+
+	_, err := Load(raw)
+	if err == nil {
+		t.Fatal("load succeeded with empty spend budget")
+	}
+	var configErr *Error
+	if !errors.As(err, &configErr) {
+		t.Fatalf("expected config error, got %T", err)
+	}
+	if configErr.Op != "spend.budgets[0]" {
+		t.Fatalf("op = %q, want spend.budgets[0]", configErr.Op)
 	}
 }
