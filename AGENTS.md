@@ -52,6 +52,14 @@ Always watch for missing tickets, prerequisite work, and opportunities to split
 oversized tickets. Keep active work associated with exactly one current issue
 unless deliberately decomposing it into multiple issues.
 
+### Next Task Requests
+
+When the user asks to "work on the next task" or uses similar phrasing:
+
+1. Search the open tickets on the project board for the highest-priority task.
+2. Work on that task using the GitHub Ticket Workflow.
+3. Exit after the workflow is complete.
+
 ## Small Batches
 
 Keep each batch focused on one intent:
