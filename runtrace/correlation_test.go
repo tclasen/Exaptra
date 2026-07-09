@@ -26,6 +26,9 @@ func TestCorrelationPathLinksRunTreeAcrossBoundaries(t *testing.T) {
 	if err := s.AppendMetaTransition(transition); err != nil {
 		t.Fatalf("append transition: %v", err)
 	}
+	if err := s.Append(stream.AssistantMessage("msg-3", 3, "final answer content", provenance)); err != nil {
+		t.Fatalf("append assistant message: %v", err)
+	}
 
 	issue := tracker.IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 66}
 	store := tracker.NewStore(nil)
@@ -53,6 +56,14 @@ func TestCorrelationPathLinksRunTreeAcrossBoundaries(t *testing.T) {
 			},
 			Status:     workflow.StatusCompleted,
 			Provenance: &stream.Provenance{Source: "workflow", Component: "lookup", TraceID: "trace-workflow"},
+		}, {
+			PlanID: "handoff",
+			Node: workflow.Node{
+				ID:   "lookup",
+				Kind: workflow.NodeKindTask,
+			},
+			Status:     workflow.StatusCompleted,
+			Provenance: &stream.Provenance{Source: "workflow", Component: "handoff-lookup", TraceID: "trace-subplan"},
 		}},
 	}
 	aggregate := &orchestration.Aggregate{
@@ -79,9 +90,38 @@ func TestCorrelationPathLinksRunTreeAcrossBoundaries(t *testing.T) {
 			t.Fatalf("correlation path leaked content %q: %s", leaked, encoded)
 		}
 	}
+	assertLinkOrder(t, path, []string{"run-1", "msg-1", "meta-1", "msg-3"})
+	assertWorkflowPlan(t, path, "trace-workflow", "example")
+	assertWorkflowPlan(t, path, "trace-subplan", "handoff")
 	if !path.Links[len(path.Links)-1].Terminal {
 		t.Fatalf("last link not marked terminal: %#v", path.Links[len(path.Links)-1])
 	}
+}
+
+func assertLinkOrder(t *testing.T, path *CorrelationPath, ids []string) {
+	t.Helper()
+	position := make(map[string]int, len(path.Links))
+	for i, link := range path.Links {
+		position[link.ID] = i
+	}
+	for i := 1; i < len(ids); i++ {
+		if position[ids[i-1]] >= position[ids[i]] {
+			t.Fatalf("link order mismatch for %q before %q in %#v", ids[i-1], ids[i], path.Links)
+		}
+	}
+}
+
+func assertWorkflowPlan(t *testing.T, path *CorrelationPath, traceID, want string) {
+	t.Helper()
+	for _, link := range path.Links {
+		if link.TraceID == traceID {
+			if link.Attributes["plan_id"] != want {
+				t.Fatalf("trace %q plan_id = %q, want %q", traceID, link.Attributes["plan_id"], want)
+			}
+			return
+		}
+	}
+	t.Fatalf("trace %q not found in %#v", traceID, path.Links)
 }
 
 func TestCorrelationPathIsClonedInSnapshot(t *testing.T) {

@@ -57,22 +57,11 @@ func NewCorrelationPath(runID, threadID string, issue tracker.IssueRef, trajecto
 		Component: "entrypoint",
 	})
 
-	for _, item := range trajectory.Items {
-		path.Links = append(path.Links, linkFromProvenance("stream."+item.Type, item.ID, runID, threadID, issueID, runID, item.Provenance, map[string]string{
-			"sequence": fmt.Sprintf("%d", item.Sequence),
-			"status":   item.Status,
-		}))
-	}
-	for _, transition := range trajectory.MetaTransitions {
-		path.Links = append(path.Links, linkFromProvenance("meta."+transition.Operation, transition.ID, runID, threadID, issueID, runID, transition.Provenance, map[string]string{
-			"sequence": fmt.Sprintf("%d", transition.Sequence),
-			"target":   transition.Target,
-		}))
-	}
+	path.Links = append(path.Links, streamLinks(runID, threadID, issueID, trajectory)...)
 	if workflowTrace != nil {
 		for _, record := range workflowTrace.Records {
 			path.Links = append(path.Links, linkFromProvenance("workflow."+record.Node.Kind, record.Node.ID, runID, threadID, issueID, runID, record.Provenance, map[string]string{
-				"plan_id": workflowTrace.PlanID,
+				"plan_id": record.PlanID,
 				"status":  record.Status,
 			}))
 		}
@@ -113,6 +102,40 @@ func NewCorrelationPath(runID, threadID string, issue tracker.IssueRef, trajecto
 		path.Links[i].Sequence = i + 1
 	}
 	return path
+}
+
+func streamLinks(runID, threadID, issueID string, trajectory stream.Trajectory) []CorrelationLink {
+	type sequencedLink struct {
+		original int64
+		link     CorrelationLink
+	}
+	links := make([]sequencedLink, 0, len(trajectory.Items)+len(trajectory.MetaTransitions))
+	for _, item := range trajectory.Items {
+		links = append(links, sequencedLink{
+			original: item.Sequence,
+			link: linkFromProvenance("stream."+item.Type, item.ID, runID, threadID, issueID, runID, item.Provenance, map[string]string{
+				"sequence": fmt.Sprintf("%d", item.Sequence),
+				"status":   item.Status,
+			}),
+		})
+	}
+	for _, transition := range trajectory.MetaTransitions {
+		links = append(links, sequencedLink{
+			original: transition.Sequence,
+			link: linkFromProvenance("meta."+transition.Operation, transition.ID, runID, threadID, issueID, runID, transition.Provenance, map[string]string{
+				"sequence": fmt.Sprintf("%d", transition.Sequence),
+				"target":   transition.Target,
+			}),
+		})
+	}
+	sort.SliceStable(links, func(i, j int) bool {
+		return links[i].original < links[j].original
+	})
+	out := make([]CorrelationLink, len(links))
+	for i, link := range links {
+		out[i] = link.link
+	}
+	return out
 }
 
 func linkFromProvenance(kind, id, runID, threadID, issue, parentID string, provenance *stream.Provenance, attrs map[string]string) CorrelationLink {
