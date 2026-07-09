@@ -237,6 +237,30 @@ func TestExecutorRoutesBlockedSubplanToFailure(t *testing.T) {
 	}
 }
 
+func TestExecutorCountsBlockedTerminalGateAsFailure(t *testing.T) {
+	executor := NewExecutor(NodeRunnerFunc(func(ctx context.Context, node Node) (TaskResult, error) {
+		return TaskResult{}, nil
+	}))
+
+	trace, err := executor.Execute(context.Background(), Plan{
+		ID:    "gate-blocked",
+		Start: "gate",
+		Nodes: []Node{{ID: "gate", Kind: NodeKindGate, ExpectStatus: "completed"}},
+	})
+	if err != nil {
+		t.Fatalf("execute plan: %v", err)
+	}
+	if len(trace.Records) != 1 {
+		t.Fatalf("record len = %d, want 1", len(trace.Records))
+	}
+	if trace.Records[0].Status != StatusBlocked {
+		t.Fatalf("terminal gate status = %q, want blocked", trace.Records[0].Status)
+	}
+	if trace.Failed != 1 {
+		t.Fatalf("failed = %d, want 1", trace.Failed)
+	}
+}
+
 func TestCloneTraceDeepCopies(t *testing.T) {
 	trace := &Trace{
 		PlanID: "plan-1",

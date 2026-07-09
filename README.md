@@ -74,6 +74,11 @@ Run stages can also be represented as graph plans with gates and reusable
 subpipelines. A graph trace records the plan structure, branching decisions,
 and nested subplan execution so the run can be inspected or replayed later.
 
+### Provider Profiles
+
+Provider-aligned profiles can shape tool exposure and prompt composition for a
+given model and workflow. The example run resolves a profile from the active
+provider and workflow, then records that selection in the run snapshot.
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
@@ -155,8 +160,8 @@ plain text.
 
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
-tracker audit records, orchestration results, workflow graph traces, tool
-registry state, and meta audit records.
+tracker audit records, provider profile, orchestration results, workflow graph
+traces, tool registry state, and meta audit records.
 
 ## MVP Limitations
 
