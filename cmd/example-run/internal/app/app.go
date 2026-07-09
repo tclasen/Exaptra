@@ -290,7 +290,7 @@ func Run(args []string, stdout io.Writer) error {
 				"model":    cfg.Model.Name,
 				"prompt":   researchPrompt,
 			},
-		}),
+		}, false),
 		telemetry.ApplyGovernance(cfg.Telemetry, telemetry.Event{
 			Kind: "metric",
 			Name: "example.high_risk_review",
@@ -299,7 +299,7 @@ func Run(args []string, stdout io.Writer) error {
 				"phase":  "handoff",
 				"secret": "must-not-export",
 			},
-		}),
+		}, false),
 	}
 
 	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace, telemetryDecisions)

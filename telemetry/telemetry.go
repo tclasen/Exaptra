@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"sort"
 	"strings"
 
@@ -9,6 +11,9 @@ import (
 
 const (
 	DecisionRecordType = "exaptra:telemetry_governance"
+	StatusDiscarded    = "discarded"
+	StatusExported     = "exported"
+	StatusPending      = "pending_approval"
 	RiskNormal         = "normal"
 	RiskHigh           = "high"
 )
@@ -25,9 +30,12 @@ type Event struct {
 type Decision struct {
 	Type                   string            `json:"type"`
 	Event                  Event             `json:"event"`
+	Status                 string            `json:"status"`
 	Exported               bool              `json:"exported"`
 	DiscardedReason        string            `json:"discarded_reason,omitempty"`
+	PendingReason          string            `json:"pending_reason,omitempty"`
 	SamplingRate           float64           `json:"sampling_rate"`
+	SamplingScore          float64           `json:"sampling_score"`
 	RetentionDays          int               `json:"retention_days,omitempty"`
 	AllowedReaders         []string          `json:"allowed_readers,omitempty"`
 	ExportRequiresApproval bool              `json:"export_requires_approval"`
@@ -36,15 +44,18 @@ type Decision struct {
 }
 
 // ApplyGovernance applies the configured export policy to one telemetry event.
-func ApplyGovernance(policy config.TelemetryConfig, event Event) Decision {
+func ApplyGovernance(policy config.TelemetryConfig, event Event, exportApproved bool) Decision {
 	rate := policy.SamplingRate
 	if event.Risk == RiskHigh {
 		rate = policy.HighRiskSamplingRate
 	}
+	score := samplingScore(event)
 	decision := Decision{
 		Type:                   DecisionRecordType,
 		Event:                  cloneEvent(event),
+		Status:                 StatusDiscarded,
 		SamplingRate:           rate,
+		SamplingScore:          score,
 		RetentionDays:          policy.RetentionDays,
 		AllowedReaders:         append([]string(nil), policy.AllowedReaders...),
 		ExportRequiresApproval: policy.ExportRequiresApproval,
@@ -57,6 +68,10 @@ func ApplyGovernance(policy config.TelemetryConfig, event Event) Decision {
 		decision.DiscardedReason = "sampling policy discarded event"
 		return decision
 	}
+	if score >= rate {
+		decision.DiscardedReason = "sampling policy discarded event"
+		return decision
+	}
 	if policy.RetentionDays <= 0 {
 		decision.DiscardedReason = "retention policy forbids export"
 		return decision
@@ -66,9 +81,41 @@ func ApplyGovernance(policy config.TelemetryConfig, event Event) Decision {
 		return decision
 	}
 
-	decision.Exported = true
 	decision.Attributes, decision.RedactedAttributes = redactAttributes(event.Attributes, policy.RedactAttributes)
+	if policy.ExportRequiresApproval && !exportApproved {
+		decision.Status = StatusPending
+		decision.PendingReason = "export approval required"
+		return decision
+	}
+
+	decision.Status = StatusExported
+	decision.Exported = true
 	return decision
+}
+
+func samplingScore(event Event) float64 {
+	hash := sha256.New()
+	hash.Write([]byte(event.Kind))
+	hash.Write([]byte{0})
+	hash.Write([]byte(event.Name))
+	hash.Write([]byte{0})
+	hash.Write([]byte(event.Risk))
+
+	keys := make([]string, 0, len(event.Attributes))
+	for key := range event.Attributes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		hash.Write([]byte{0})
+		hash.Write([]byte(key))
+		hash.Write([]byte("="))
+		hash.Write([]byte(event.Attributes[key]))
+	}
+
+	sum := hash.Sum(nil)
+	value := binary.BigEndian.Uint64(sum[:8])
+	return float64(value) / float64(^uint64(0))
 }
 
 func cloneEvent(event Event) Event {

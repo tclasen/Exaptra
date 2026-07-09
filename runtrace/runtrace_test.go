@@ -200,7 +200,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			"prompt": "secret prompt",
 			"phase":  "lookup",
 		},
-	})}
+	}, true)}
 
 	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace, telemetryDecisions)
 	encoded, err := json.Marshal(snapshot)
