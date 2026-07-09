@@ -7,6 +7,7 @@ import (
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/orchestration"
+	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
@@ -19,12 +20,13 @@ type Snapshot struct {
 	Registry      mcp.DiscoveryState       `json:"registry"`
 	Audits        []meta.AuditRecord       `json:"audits"`
 	Tracker       []tracker.AuditRecord    `json:"tracker"`
+	Profile       *profiles.Selection      `json:"profile,omitempty"`
 	Orchestration *orchestration.Aggregate `json:"orchestration,omitempty"`
 	Workflow      *workflow.Trace          `json:"workflow,omitempty"`
 }
 
 // NewSnapshot collects a redacted, serializable run snapshot.
-func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace) Snapshot {
+func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, profile *profiles.Selection, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace) Snapshot {
 	var registry mcp.DiscoveryState
 	if catalog != nil {
 		registry = catalog.Snapshot()
@@ -39,6 +41,7 @@ func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audi
 		Registry:      registry,
 		Audits:        cloneAudits(audits),
 		Tracker:       cloneTrackerAudits(trackerAudits),
+		Profile:       profiles.CloneSelection(profile),
 		Orchestration: orchestration.CloneAggregate(orchestrationAggregate),
 		Workflow:      workflow.CloneTrace(workflowTrace),
 	}

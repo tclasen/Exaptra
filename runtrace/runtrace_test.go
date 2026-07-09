@@ -10,6 +10,7 @@ import (
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/orchestration"
+	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
@@ -133,6 +134,18 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			Nodes: []workflow.Node{{ID: "lookup", Kind: workflow.NodeKindTask, Action: "lookup"}},
 		},
 	}
+	profileSelection := &profiles.Selection{
+		Name:        "local-example",
+		Provider:    "local",
+		Model:       "example-model",
+		Workflow:    "example",
+		ToolSurface: []string{"lookup"},
+		Styles: map[string]profiles.Style{
+			"research": {
+				Prefix: "[local/example-model:research]",
+			},
+		},
+	}
 
 	catalog := mcp.NewCatalog()
 	catalog.Permissions().GrantMutations("test")
@@ -157,7 +170,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), &batch, &workflowTrace)
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, &batch, &workflowTrace)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -182,6 +195,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"orchestration":{"parent_run_id":"run-1","max_concurrency":2,"completed":2,"failed":0`) || !strings.Contains(string(encoded), `"trace-research"`) {
 		t.Fatalf("snapshot missing orchestration data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"profile":{"name":"local-example","provider":"local","model":"example-model","workflow":"example"`) || !strings.Contains(string(encoded), `"tool_surface":["lookup"]`) {
+		t.Fatalf("snapshot missing profile data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
 		t.Fatalf("snapshot missing workflow data: %s", encoded)

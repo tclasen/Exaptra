@@ -12,6 +12,7 @@ import (
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/orchestration"
+	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/runtrace"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
@@ -32,6 +33,15 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
+	activeProfile, err := profiles.DefaultRegistry().Resolve(profiles.Input{
+		Provider: cfg.Model.Provider,
+		Model:    cfg.Model.Name,
+		Workflow: "example",
+	})
+	if err != nil {
+		return err
+	}
+
 	s := stream.New()
 	provenance := &stream.Provenance{Source: "assistant", Provider: cfg.Model.Provider, Model: cfg.Model.Name}
 	if err := s.Append(stream.UserMessage("msg_1", 1, "find the example record", provenance)); err != nil {
@@ -45,13 +55,26 @@ func Run(args []string, stdout io.Writer) error {
 	if _, err := catalog.DiscoverFrom(context.Background(), identity, provider); err != nil {
 		return err
 	}
-	if err := catalog.Expose(identity, "lookup"); err != nil {
-		return err
-	}
 
 	dispatcher := mcp.NewDispatcher(catalog, resolverMap{
 		identity.String(): provider,
 	})
+
+	discoveredTools := make(map[string]struct{})
+	for _, tool := range catalog.Snapshot().Discovered {
+		discoveredTools[tool.Name] = struct{}{}
+	}
+	for _, toolName := range activeProfile.ToolSurface {
+		if _, ok := discoveredTools[toolName]; ok {
+			if err := catalog.Expose(identity, toolName); err != nil {
+				return err
+			}
+			continue
+		}
+	}
+	if !activeProfile.AllowsTool("lookup") {
+		return fmt.Errorf("profile %q does not allow the lookup tool required by the example workflow", activeProfile.Name)
+	}
 
 	compactor, err := meta.NewStreamCompactor(meta.NewValidator("compact"), s, 3, meta.Identity{Name: "agent", Index: 1}, meta.Identity{Name: identity.Name, Index: identity.Index})
 	if err != nil {
@@ -85,6 +108,14 @@ func Run(args []string, stdout io.Writer) error {
 		}, nil
 	}), 2)
 	var fanoutAggregate *orchestration.Aggregate
+	researchPrompt, err := activeProfile.ComposePrompt("research", "summarize the lookup output")
+	if err != nil {
+		return err
+	}
+	validatePrompt, err := activeProfile.ComposePrompt("validate", "confirm handoff state and tracker writes")
+	if err != nil {
+		return err
+	}
 	workflowExecutor := workflow.NewExecutor(workflow.NodeRunnerFunc(func(ctx context.Context, node workflow.Node) (workflow.TaskResult, error) {
 		switch node.Action {
 		case "lookup":
@@ -190,8 +221,8 @@ func Run(args []string, stdout io.Writer) error {
 			aggregate, err := executor.Execute(ctx, orchestration.Batch{
 				ParentRunID: "example-run",
 				Tasks: []orchestration.Task{
-					{ID: "research", Prompt: "summarize the lookup output", Workspace: "shared", SharedWorkspace: true, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
-					{ID: "validate", Prompt: "confirm handoff state and tracker writes", Workspace: "review", SharedWorkspace: false, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+					{ID: "research", Prompt: researchPrompt, Workspace: "shared", SharedWorkspace: true, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+					{ID: "validate", Prompt: validatePrompt, Workspace: "review", SharedWorkspace: false, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
 				},
 			})
 			if err != nil {
@@ -231,7 +262,7 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), fanoutAggregate, &workflowTrace)
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, fanoutAggregate, &workflowTrace)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
