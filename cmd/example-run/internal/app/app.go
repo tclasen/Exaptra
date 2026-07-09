@@ -13,6 +13,7 @@ import (
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/runtrace"
 	"github.com/tclasen/Exaptra/stream"
+	"github.com/tclasen/Exaptra/tracker"
 )
 
 // Run executes the runnable example and writes the serialized run snapshot.
@@ -69,7 +70,53 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits())
+	trackerStore := tracker.NewStore(nil)
+	issue := tracker.IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
+	if _, err := trackerStore.Comment(context.Background(), tracker.CommentRequest{
+		RunID: "example-run",
+		Issue: issue,
+		Body:  "compaction complete; ready for review",
+		Provenance: tracker.Provenance{
+			RunID:     "example-run",
+			Source:    "example-run",
+			Component: "tracker",
+		},
+	}); err != nil {
+		return err
+	}
+	if _, err := trackerStore.SetState(context.Background(), tracker.StateRequest{
+		RunID:  "example-run",
+		Issue:  issue,
+		State:  tracker.HandoffStateReview,
+		Reason: "workflow-defined review state",
+		Provenance: tracker.Provenance{
+			RunID:     "example-run",
+			Source:    "example-run",
+			Component: "tracker",
+		},
+	}); err != nil {
+		return err
+	}
+	if _, err := trackerStore.LinkPullRequest(context.Background(), tracker.PullRequestLinkRequest{
+		RunID: "example-run",
+		Issue: issue,
+		PullRequest: tracker.PullRequestRef{
+			Owner:  "tclasen",
+			Repo:   "Exaptra",
+			Number: 99,
+			URL:    "https://github.com/tclasen/Exaptra/pull/99",
+		},
+		State: tracker.HandoffStateReview,
+		Provenance: tracker.Provenance{
+			RunID:     "example-run",
+			Source:    "example-run",
+			Component: "tracker",
+		},
+	}); err != nil {
+		return err
+	}
+
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits())
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
