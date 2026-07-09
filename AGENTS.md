@@ -24,6 +24,11 @@ say why.
 Every task must be tracked by a GitHub issue on the project board, including
 interactive or conversational work.
 
+Before picking up new work, first scan for partially completed or abandoned
+work so resumption happens before new task selection. Check the current branch,
+local changes, open PRs, and related issues for unfinished work that should be
+continued, closed, or decomposed instead of starting fresh.
+
 Before starting implementation:
 
 1. Find the GitHub issue associated with the requested work.
