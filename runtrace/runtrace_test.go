@@ -183,7 +183,8 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace)
+	correlation := NewCorrelationPath("run-1", "thread-1", trackerIssue, s.Trajectory(), &workflowTrace, &batch, trackerStore.Audits())
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace, correlation)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -217,6 +218,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
 		t.Fatalf("snapshot missing workflow data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"correlation":{"run_id":"run-1","thread_id":"thread-1"`) || !strings.Contains(string(encoded), `"kind":"tracker.comment"`) {
+		t.Fatalf("snapshot missing correlation data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

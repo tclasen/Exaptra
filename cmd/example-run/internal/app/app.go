@@ -280,7 +280,8 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace)
+	correlation := runtrace.NewCorrelationPath("example-run", "thread-example", issue, s.Trajectory(), &workflowTrace, fanoutAggregate, trackerStore.Audits())
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace, correlation)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
