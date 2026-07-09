@@ -10,6 +10,7 @@ import (
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
 	"github.com/tclasen/Exaptra/stream"
+	"github.com/tclasen/Exaptra/tracker"
 )
 
 type stubDiscoverer struct {
@@ -59,6 +60,39 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("append meta transition: %v", err)
 	}
 
+	trackerStore := tracker.NewStore(nil)
+	trackerIssue := tracker.IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
+	if _, err := trackerStore.Comment(context.Background(), tracker.CommentRequest{
+		RunID: "run-1",
+		Issue: trackerIssue,
+		Body:  "recorded progress",
+		Provenance: tracker.Provenance{
+			RunID:     "run-1",
+			Source:    "orchestrator",
+			Component: "tracker",
+		},
+	}); err != nil {
+		t.Fatalf("record tracker comment: %v", err)
+	}
+	if _, err := trackerStore.LinkPullRequest(context.Background(), tracker.PullRequestLinkRequest{
+		RunID: "run-1",
+		Issue: trackerIssue,
+		PullRequest: tracker.PullRequestRef{
+			Owner:  "tclasen",
+			Repo:   "Exaptra",
+			Number: 99,
+			URL:    "https://github.com/tclasen/Exaptra/pull/99",
+		},
+		State: tracker.HandoffStateReview,
+		Provenance: tracker.Provenance{
+			RunID:     "run-1",
+			Source:    "orchestrator",
+			Component: "tracker",
+		},
+	}); err != nil {
+		t.Fatalf("record tracker PR link: %v", err)
+	}
+
 	catalog := mcp.NewCatalog()
 	catalog.Permissions().GrantMutations("test")
 	_, err = catalog.DiscoverFrom(context.Background(), mcp.Identity{Name: "filesystem", Index: 0}, stubDiscoverer{tools: []mcp.ToolMetadata{{Name: "lookup", Description: "lookup records", Scope: "read"}}})
@@ -82,7 +116,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit})
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits())
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -98,6 +132,12 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"type":"exaptra:meta_transition"`) || !strings.Contains(string(encoded), `"validation":{"allowed":true`) {
 		t.Fatalf("snapshot missing meta audit data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"type":"exaptra:tracker_comment"`) || !strings.Contains(string(encoded), `"recorded progress"`) {
+		t.Fatalf("snapshot missing tracker audit data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"type":"exaptra:tracker_pr_link"`) || !strings.Contains(string(encoded), `"pull_request":{"owner":"tclasen","repo":"Exaptra","number":99,"url":"https://github.com/tclasen/Exaptra/pull/99"}`) {
+		t.Fatalf("snapshot missing tracker PR link data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

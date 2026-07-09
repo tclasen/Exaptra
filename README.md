@@ -55,6 +55,13 @@ most systems, this is treated as an append-only chat log. Exaptra treats the
 stream as a managed runtime object that can be inspected and transformed by
 authorized meta tools.
 
+### Tracker Writes
+
+Tracker writes are explicit orchestrator operations for comments, workflow
+state changes, and PR handoff links. They carry run and issue identity,
+record provenance, and are intended to sit behind an adapter boundary so
+different tracker providers can be supported over time.
+
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
@@ -136,7 +143,7 @@ plain text.
 
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
-tool registry state, and meta audit records.
+tracker audit records, tool registry state, and meta audit records.
 
 ## MVP Limitations
 
