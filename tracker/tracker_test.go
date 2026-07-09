@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -149,5 +150,62 @@ func TestStoreRecordsAdapterFailuresWithoutMutatingState(t *testing.T) {
 	}
 	if _, ok := store.State(issue); ok {
 		t.Fatal("failed comment mutated issue state")
+	}
+}
+
+func TestStoreRejectsUnknownHandoffState(t *testing.T) {
+	store := NewStore(nil)
+	issue := IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
+
+	audit, err := store.SetState(context.Background(), StateRequest{
+		RunID: "run-3",
+		Issue: issue,
+		State: HandoffState("typo"),
+		Provenance: Provenance{
+			RunID:     "run-3",
+			Source:    "orchestrator",
+			Component: "tracker",
+		},
+	})
+	if err == nil {
+		t.Fatal("invalid state unexpectedly succeeded")
+	}
+	if audit.Result != ResultFailed {
+		t.Fatalf("audit result = %q, want %q", audit.Result, ResultFailed)
+	}
+	if _, ok := store.State(issue); ok {
+		t.Fatal("invalid state mutated issue state")
+	}
+}
+
+func TestAuditsAreClonedOnRead(t *testing.T) {
+	store := NewStore(nil)
+	issue := IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
+	if _, err := store.Comment(context.Background(), CommentRequest{
+		RunID: "run-4",
+		Issue: issue,
+		Body:  "immutable audit",
+		Provenance: Provenance{
+			RunID:     "run-4",
+			Source:    "orchestrator",
+			Component: "tracker",
+		},
+	}); err != nil {
+		t.Fatalf("comment: %v", err)
+	}
+
+	audits := store.Audits()
+	if len(audits) != 1 {
+		t.Fatalf("audit len = %d, want 1", len(audits))
+	}
+	audits[0].Request[0] = 'x'
+	audits[0].Before = json.RawMessage(`{"mutated":true}`)
+
+	again := store.Audits()
+	if string(again[0].Request) == string(audits[0].Request) {
+		t.Fatal("stored request mutated through returned audit copy")
+	}
+	if string(again[0].Before) == `{"mutated":true}` {
+		t.Fatal("stored before snapshot mutated through returned audit copy")
 	}
 }

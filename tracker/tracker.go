@@ -74,10 +74,14 @@ const (
 )
 
 func (s HandoffState) Validate() error {
-	if s == "" {
+	switch s {
+	case HandoffStateOpen, HandoffStateActive, HandoffStateReview, HandoffStateClosed:
+		return nil
+	case "":
 		return errors.New("tracker: handoff state is required")
+	default:
+		return fmt.Errorf("tracker: unsupported handoff state %q", s)
 	}
-	return nil
 }
 
 // Provenance captures where a tracker mutation came from.
@@ -246,7 +250,9 @@ func (s *Store) Audits() []AuditRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]AuditRecord, len(s.audits))
-	copy(out, s.audits)
+	for i, audit := range s.audits {
+		out[i] = cloneAuditRecord(audit)
+	}
 	return out
 }
 
@@ -309,7 +315,7 @@ func (s *Store) recordLocked(operation, runID string, issue IssueRef, provenance
 		Operation:  operation,
 		RunID:      runID,
 		Issue:      issue,
-		Request:    req,
+		Request:    cloneJSON(req),
 		Before:     cloneJSON(before),
 		After:      cloneJSON(after),
 		Provenance: provenance,
@@ -360,4 +366,11 @@ func cloneJSON(raw []byte) json.RawMessage {
 	cloned := make([]byte, len(raw))
 	copy(cloned, raw)
 	return json.RawMessage(cloned)
+}
+
+func cloneAuditRecord(audit AuditRecord) AuditRecord {
+	audit.Request = cloneJSON(audit.Request)
+	audit.Before = cloneJSON(audit.Before)
+	audit.After = cloneJSON(audit.After)
+	return audit
 }
