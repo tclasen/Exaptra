@@ -72,6 +72,7 @@ type Config struct {
 	MCP         []MCPProvider   `json:"mcp_providers"`
 	ToolPolicy  ToolPolicy      `json:"tool_policy"`
 	Permissions MetaPermissions `json:"permissions"`
+	Spend       SpendConfig     `json:"spend"`
 	Debug       DebugConfig     `json:"debug"`
 }
 
@@ -121,6 +122,22 @@ type MetaPermissions struct {
 	Tools []string `json:"tools,omitempty"`
 }
 
+// SpendConfig controls token spend trend windows and budget alerts.
+type SpendConfig struct {
+	Window   string        `json:"window"`
+	Currency string        `json:"currency"`
+	Budgets  []SpendBudget `json:"budgets,omitempty"`
+}
+
+// SpendBudget defines one token or cost threshold.
+type SpendBudget struct {
+	Name       string  `json:"name"`
+	Provider   string  `json:"provider,omitempty"`
+	Model      string  `json:"model,omitempty"`
+	MaxTokens  int     `json:"max_tokens,omitempty"`
+	MaxCostUSD float64 `json:"max_cost_usd,omitempty"`
+}
+
 // DebugConfig controls trace and audit behavior.
 type DebugConfig struct {
 	Trace bool `json:"trace"`
@@ -158,6 +175,7 @@ type rawConfig struct {
 	MCP         []rawMCPProvider   `json:"mcp_providers"`
 	ToolPolicy  rawToolPolicy      `json:"tool_policy"`
 	Permissions rawMetaPermissions `json:"permissions"`
+	Spend       rawSpendConfig     `json:"spend"`
 	Debug       rawDebugConfig     `json:"debug"`
 }
 
@@ -189,6 +207,20 @@ type rawToolPolicy struct {
 type rawMetaPermissions struct {
 	Mode  *string  `json:"mode"`
 	Tools []string `json:"tools,omitempty"`
+}
+
+type rawSpendConfig struct {
+	Window   *string          `json:"window"`
+	Currency *string          `json:"currency"`
+	Budgets  []rawSpendBudget `json:"budgets,omitempty"`
+}
+
+type rawSpendBudget struct {
+	Name       *string  `json:"name"`
+	Provider   string   `json:"provider,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	MaxTokens  int      `json:"max_tokens,omitempty"`
+	MaxCostUSD *float64 `json:"max_cost_usd,omitempty"`
 }
 
 type rawDebugConfig struct {
@@ -228,6 +260,11 @@ func (r rawConfig) resolve() (Config, error) {
 		return Config{}, err
 	}
 
+	spend, err := r.Spend.resolve()
+	if err != nil {
+		return Config{}, err
+	}
+
 	debug, err := r.Debug.resolve()
 	if err != nil {
 		return Config{}, err
@@ -238,6 +275,7 @@ func (r rawConfig) resolve() (Config, error) {
 		MCP:         mcpProviders,
 		ToolPolicy:  policy,
 		Permissions: permissions,
+		Spend:       spend,
 		Debug:       debug,
 	}, nil
 }
@@ -313,6 +351,54 @@ func (r rawMetaPermissions) resolve() (MetaPermissions, error) {
 	return MetaPermissions{
 		Mode:  *r.Mode,
 		Tools: append([]string(nil), r.Tools...),
+	}, nil
+}
+
+func (r rawSpendConfig) resolve() (SpendConfig, error) {
+	if r.Window == nil || *r.Window == "" {
+		return SpendConfig{}, newConfigError("spend.window", "missing spend trend window", nil)
+	}
+	if r.Currency == nil || *r.Currency == "" {
+		return SpendConfig{}, newConfigError("spend.currency", "missing spend currency", nil)
+	}
+	budgets := make([]SpendBudget, len(r.Budgets))
+	for i, budget := range r.Budgets {
+		resolved, err := budget.resolve(i)
+		if err != nil {
+			return SpendConfig{}, err
+		}
+		budgets[i] = resolved
+	}
+	return SpendConfig{
+		Window:   *r.Window,
+		Currency: *r.Currency,
+		Budgets:  budgets,
+	}, nil
+}
+
+func (r rawSpendBudget) resolve(index int) (SpendBudget, error) {
+	if r.Name == nil || *r.Name == "" {
+		return SpendBudget{}, newConfigError(fmt.Sprintf("spend.budgets[%d].name", index), "missing spend budget name", nil)
+	}
+	maxCostUSD := 0.0
+	if r.MaxCostUSD != nil {
+		maxCostUSD = *r.MaxCostUSD
+	}
+	if r.MaxTokens < 0 {
+		return SpendBudget{}, newConfigError(fmt.Sprintf("spend.budgets[%d].max_tokens", index), "must be zero or positive", nil)
+	}
+	if maxCostUSD < 0 {
+		return SpendBudget{}, newConfigError(fmt.Sprintf("spend.budgets[%d].max_cost_usd", index), "must be zero or positive", nil)
+	}
+	if r.MaxTokens == 0 && maxCostUSD == 0 {
+		return SpendBudget{}, newConfigError(fmt.Sprintf("spend.budgets[%d]", index), "at least one spend threshold is required", nil)
+	}
+	return SpendBudget{
+		Name:       *r.Name,
+		Provider:   r.Provider,
+		Model:      r.Model,
+		MaxTokens:  r.MaxTokens,
+		MaxCostUSD: maxCostUSD,
 	}, nil
 }
 
