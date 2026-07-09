@@ -6,7 +6,7 @@ cd "$ROOT"
 
 export EXAPTRA_MODEL_API_KEY="${EXAPTRA_MODEL_API_KEY:-validation-secret}"
 
-go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
+go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./telemetry ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
 
 output="$(go run ./cmd/example-run -config examples/localrun/config.example.json)"
 
@@ -15,6 +15,9 @@ printf '%s\n' "$output" | grep -Fq '"type": "function_call_output"'
 printf '%s\n' "$output" | grep -Fq '"type": "exaptra:meta_transition"'
 printf '%s\n' "$output" | grep -Fq '"type": "exaptra:tracker_comment"'
 printf '%s\n' "$output" | grep -Fq '"type": "exaptra:tracker_pr_link"'
+printf '%s\n' "$output" | grep -Fq '"type": "exaptra:telemetry_governance"'
+printf '%s\n' "$output" | grep -Fq '"prompt": "[redacted]"'
+printf '%s\n' "$output" | grep -Fq '"discarded_reason": "sampling policy discarded event"'
 printf '%s\n' "$output" | grep -Fq '"state": "review_ready"'
 printf '%s\n' "$output" | grep -Fq '"pull_request": {'
 printf '%s\n' "$output" | grep -Fq '"profile": {'

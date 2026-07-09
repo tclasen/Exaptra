@@ -24,6 +24,22 @@
   "permissions": {
     "mode": "deny_by_default"
   },
+  "telemetry": {
+    "enabled": true,
+    "sampling_rate": 1,
+    "high_risk_sampling_rate": 0,
+    "retention_days": 14,
+    "allowed_readers": [
+      "maintainers"
+    ],
+    "export_requires_approval": true,
+    "redact_attributes": [
+      "prompt",
+      "message",
+      "secret",
+      "token"
+    ]
+  },
   "debug": {
     "trace": true,
     "audit": true

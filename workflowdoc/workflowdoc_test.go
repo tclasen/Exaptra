@@ -21,6 +21,16 @@ prompts:
 runtime:
   shared_workspace: true
   max_concurrency: 2
+telemetry:
+  enabled: true
+  sampling_rate: 1
+  high_risk_sampling_rate: 0.25
+  retention_days: 14
+  allowed_readers:
+    - maintainers
+  export_requires_approval: true
+  redact_attributes:
+    - prompt
 ---
 # {{.Issue.Title}}
 Issue #{{.Issue.Number}} for {{.Issue.Owner}}/{{.Issue.Repo}}
@@ -28,6 +38,7 @@ Labels: {{join .Issue.Labels ", "}}
 Blockers: {{join .Issue.Blockers ", "}}
 Instructions: {{.Issue.Instructions}}
 Policy mode: {{.FrontMatter.Policy.Mode}}
+Telemetry retention: {{.FrontMatter.Telemetry.RetentionDays}}
 `)
 
 	doc, err := Load(dir, "")
@@ -42,6 +53,9 @@ Policy mode: {{.FrontMatter.Policy.Mode}}
 	}
 	if !doc.FrontMatter.Runtime.SharedWorkspace || doc.FrontMatter.Runtime.MaxConcurrency != 2 {
 		t.Fatalf("unexpected runtime config: %#v", doc.FrontMatter.Runtime)
+	}
+	if !doc.FrontMatter.Telemetry.Enabled || doc.FrontMatter.Telemetry.HighRiskSamplingRate != 0.25 {
+		t.Fatalf("unexpected telemetry config: %#v", doc.FrontMatter.Telemetry)
 	}
 
 	rendered, err := doc.Render(RenderContext{
@@ -66,10 +80,35 @@ Policy mode: {{.FrontMatter.Policy.Mode}}
 		"Blockers: docs",
 		"Instructions: treat the workflow file as the contract",
 		"Policy mode: gate",
+		"Telemetry retention: 14",
 	} {
 		if !strings.Contains(rendered, needle) {
 			t.Fatalf("rendered body missing %q: %s", needle, rendered)
 		}
+	}
+}
+
+func TestLoadRejectsUnsafeTelemetryFrontMatter(t *testing.T) {
+	dir := t.TempDir()
+	writeWorkflow(t, filepath.Join(dir, defaultFilename), `---
+policy:
+  mode: gate
+runtime:
+  shared_workspace: true
+telemetry:
+  enabled: true
+  sampling_rate: 1.1
+  retention_days: 14
+  allowed_readers:
+    - maintainers
+  export_requires_approval: true
+---
+Body
+`)
+
+	_, err := Load(dir, "")
+	if err == nil || !strings.Contains(err.Error(), "telemetry.sampling_rate must be between 0 and 1") {
+		t.Fatalf("expected telemetry validation error, got %v", err)
 	}
 }
 

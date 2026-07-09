@@ -72,6 +72,7 @@ type Config struct {
 	MCP         []MCPProvider   `json:"mcp_providers"`
 	ToolPolicy  ToolPolicy      `json:"tool_policy"`
 	Permissions MetaPermissions `json:"permissions"`
+	Telemetry   TelemetryConfig `json:"telemetry"`
 	Debug       DebugConfig     `json:"debug"`
 }
 
@@ -121,6 +122,17 @@ type MetaPermissions struct {
 	Tools []string `json:"tools,omitempty"`
 }
 
+// TelemetryConfig governs which run telemetry may leave the runtime boundary.
+type TelemetryConfig struct {
+	Enabled                bool     `json:"enabled"`
+	SamplingRate           float64  `json:"sampling_rate"`
+	HighRiskSamplingRate   float64  `json:"high_risk_sampling_rate,omitempty"`
+	RetentionDays          int      `json:"retention_days"`
+	AllowedReaders         []string `json:"allowed_readers,omitempty"`
+	ExportRequiresApproval bool     `json:"export_requires_approval"`
+	RedactAttributes       []string `json:"redact_attributes,omitempty"`
+}
+
 // DebugConfig controls trace and audit behavior.
 type DebugConfig struct {
 	Trace bool `json:"trace"`
@@ -158,6 +170,7 @@ type rawConfig struct {
 	MCP         []rawMCPProvider   `json:"mcp_providers"`
 	ToolPolicy  rawToolPolicy      `json:"tool_policy"`
 	Permissions rawMetaPermissions `json:"permissions"`
+	Telemetry   rawTelemetryConfig `json:"telemetry"`
 	Debug       rawDebugConfig     `json:"debug"`
 }
 
@@ -189,6 +202,16 @@ type rawToolPolicy struct {
 type rawMetaPermissions struct {
 	Mode  *string  `json:"mode"`
 	Tools []string `json:"tools,omitempty"`
+}
+
+type rawTelemetryConfig struct {
+	Enabled                *bool    `json:"enabled"`
+	SamplingRate           *float64 `json:"sampling_rate"`
+	HighRiskSamplingRate   *float64 `json:"high_risk_sampling_rate,omitempty"`
+	RetentionDays          *int     `json:"retention_days"`
+	AllowedReaders         []string `json:"allowed_readers,omitempty"`
+	ExportRequiresApproval *bool    `json:"export_requires_approval"`
+	RedactAttributes       []string `json:"redact_attributes,omitempty"`
 }
 
 type rawDebugConfig struct {
@@ -228,6 +251,11 @@ func (r rawConfig) resolve() (Config, error) {
 		return Config{}, err
 	}
 
+	telemetry, err := r.Telemetry.resolve()
+	if err != nil {
+		return Config{}, err
+	}
+
 	debug, err := r.Debug.resolve()
 	if err != nil {
 		return Config{}, err
@@ -238,6 +266,7 @@ func (r rawConfig) resolve() (Config, error) {
 		MCP:         mcpProviders,
 		ToolPolicy:  policy,
 		Permissions: permissions,
+		Telemetry:   telemetry,
 		Debug:       debug,
 	}, nil
 }
@@ -313,6 +342,46 @@ func (r rawMetaPermissions) resolve() (MetaPermissions, error) {
 	return MetaPermissions{
 		Mode:  *r.Mode,
 		Tools: append([]string(nil), r.Tools...),
+	}, nil
+}
+
+func (r rawTelemetryConfig) resolve() (TelemetryConfig, error) {
+	if r.Enabled == nil {
+		return TelemetryConfig{}, newConfigError("telemetry.enabled", "missing telemetry enabled flag", nil)
+	}
+	if r.SamplingRate == nil {
+		return TelemetryConfig{}, newConfigError("telemetry.sampling_rate", "missing telemetry sampling rate", nil)
+	}
+	if *r.SamplingRate < 0 || *r.SamplingRate > 1 {
+		return TelemetryConfig{}, newConfigError("telemetry.sampling_rate", "must be between 0 and 1", nil)
+	}
+	highRiskSamplingRate := *r.SamplingRate
+	if r.HighRiskSamplingRate != nil {
+		if *r.HighRiskSamplingRate < 0 || *r.HighRiskSamplingRate > 1 {
+			return TelemetryConfig{}, newConfigError("telemetry.high_risk_sampling_rate", "must be between 0 and 1", nil)
+		}
+		highRiskSamplingRate = *r.HighRiskSamplingRate
+	}
+	if r.RetentionDays == nil {
+		return TelemetryConfig{}, newConfigError("telemetry.retention_days", "missing telemetry retention", nil)
+	}
+	if *r.Enabled && *r.RetentionDays <= 0 {
+		return TelemetryConfig{}, newConfigError("telemetry.retention_days", "must be positive when telemetry is enabled", nil)
+	}
+	if *r.Enabled && len(r.AllowedReaders) == 0 {
+		return TelemetryConfig{}, newConfigError("telemetry.allowed_readers", "at least one reader is required when telemetry is enabled", nil)
+	}
+	if r.ExportRequiresApproval == nil {
+		return TelemetryConfig{}, newConfigError("telemetry.export_requires_approval", "missing export approval policy", nil)
+	}
+	return TelemetryConfig{
+		Enabled:                *r.Enabled,
+		SamplingRate:           *r.SamplingRate,
+		HighRiskSamplingRate:   highRiskSamplingRate,
+		RetentionDays:          *r.RetentionDays,
+		AllowedReaders:         append([]string(nil), r.AllowedReaders...),
+		ExportRequiresApproval: *r.ExportRequiresApproval,
+		RedactAttributes:       append([]string(nil), r.RedactAttributes...),
 	}, nil
 }
 
