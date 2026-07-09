@@ -136,8 +136,11 @@ func (e *Executor) runPlan(ctx context.Context, plan Plan, depth int) (Trace, er
 
 		switch node.Kind {
 		case NodeKindTask:
-			record := e.runTaskNode(ctx, plan.ID, depth, node)
-			trace.appendRecord(record)
+			records := e.runTaskNode(ctx, plan.ID, depth, node)
+			for _, record := range records {
+				trace.appendRecord(record)
+			}
+			record := records[len(records)-1]
 			if record.Status == StatusFailed {
 				current = node.OnFailure
 			} else {
@@ -192,12 +195,13 @@ func (e *Executor) runPlan(ctx context.Context, plan Plan, depth int) (Trace, er
 	return trace, nil
 }
 
-func (e *Executor) runTaskNode(ctx context.Context, planID string, depth int, node Node) Record {
+func (e *Executor) runTaskNode(ctx context.Context, planID string, depth int, node Node) []Record {
+	records := make([]Record, 0, node.RetryLimit+1)
 	attempts := node.RetryLimit + 1
 	for attempt := 1; attempt <= attempts; attempt++ {
 		result, err := e.runner.RunTask(ctx, cloneNode(node))
 		if err == nil {
-			return Record{
+			records = append(records, Record{
 				PlanID:     planID,
 				Depth:      depth,
 				Node:       cloneNode(node),
@@ -205,7 +209,8 @@ func (e *Executor) runTaskNode(ctx context.Context, planID string, depth int, no
 				Status:     StatusCompleted,
 				Output:     cloneJSON(result.Output),
 				Provenance: mergeProvenance(node.Provenance, result.Provenance, node.ID),
-			}
+			})
+			return records
 		}
 
 		status := StatusFailed
@@ -226,12 +231,13 @@ func (e *Executor) runTaskNode(ctx context.Context, planID string, depth int, no
 		if status == StatusRetrying {
 			record.Next = node.ID
 		}
+		records = append(records, record)
 		if attempt < attempts {
 			continue
 		}
-		return record
+		return records
 	}
-	return Record{PlanID: planID, Depth: depth, Node: cloneNode(node), Status: StatusFailed}
+	return records
 }
 
 func gateRecord(planID string, depth int, node Node, previous *Record) (Record, bool) {
@@ -267,14 +273,14 @@ func gateRecord(planID string, depth int, node Node, previous *Record) (Record, 
 }
 
 func selectNext(success, failure string, subtrace Trace, err error) string {
-	if err != nil || subtrace.Failed > 0 {
+	if err != nil || !traceSucceeded(subtrace) {
 		return failure
 	}
 	return success
 }
 
 func subplanStatus(subtrace Trace, err error) string {
-	if err != nil || subtrace.Failed > 0 {
+	if err != nil || !traceSucceeded(subtrace) {
 		return StatusFailed
 	}
 	return StatusCompleted
@@ -282,9 +288,11 @@ func subplanStatus(subtrace Trace, err error) string {
 
 func summarizeSubplan(subtrace Trace) json.RawMessage {
 	payload, err := json.Marshal(map[string]any{
-		"plan_id":   subtrace.PlanID,
-		"completed": subtrace.Completed,
-		"failed":    subtrace.Failed,
+		"plan_id":         subtrace.PlanID,
+		"completed":       subtrace.Completed,
+		"failed":          subtrace.Failed,
+		"succeeded":       traceSucceeded(subtrace),
+		"terminal_status": terminalStatus(subtrace),
 	})
 	if err != nil {
 		return json.RawMessage(`{"error":"failed to summarize subplan"}`)
@@ -300,6 +308,17 @@ func countRecords(records []Record, status string) int {
 		}
 	}
 	return total
+}
+
+func traceSucceeded(trace Trace) bool {
+	return terminalStatus(trace) == StatusCompleted || terminalStatus(trace) == StatusPassed
+}
+
+func terminalStatus(trace Trace) string {
+	if len(trace.Records) == 0 {
+		return ""
+	}
+	return trace.Records[len(trace.Records)-1].Status
 }
 
 func (t *Trace) appendRecord(record Record) {
@@ -389,7 +408,16 @@ func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error 
 		}
 	}
 
-	return validateAcyclic(plan.Start, nodes, map[string]bool{}, map[string]bool{})
+	visited := map[string]bool{}
+	for id := range nodes {
+		if visited[id] {
+			continue
+		}
+		if err := validateAcyclic(id, nodes, map[string]bool{}, visited); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateEdge(planID string, nodes map[string]Node, from, to string) error {

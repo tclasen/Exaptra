@@ -117,6 +117,19 @@ func TestPlanValidationRejectsMissingReferencesAndCycles(t *testing.T) {
 		t.Fatalf("cycle validation = %v", err)
 	}
 
+	disconnectedCycle := Plan{
+		ID:    "disconnected",
+		Start: "root",
+		Nodes: []Node{
+			{ID: "root", Kind: NodeKindTask, Action: "lookup"},
+			{ID: "b", Kind: NodeKindTask, Action: "compact", OnSuccess: "c"},
+			{ID: "c", Kind: NodeKindTask, Action: "compact", OnSuccess: "b"},
+		},
+	}
+	if err := disconnectedCycle.Validate(); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("disconnected cycle validation = %v", err)
+	}
+
 	duplicateSubplans := Plan{
 		ID:    "dup",
 		Start: "start",
@@ -128,6 +141,67 @@ func TestPlanValidationRejectsMissingReferencesAndCycles(t *testing.T) {
 	}
 	if err := duplicateSubplans.Validate(); err == nil || !strings.Contains(err.Error(), "defined more than once") {
 		t.Fatalf("duplicate subplan validation = %v", err)
+	}
+}
+
+func TestExecutorRecordsRetriesInTrace(t *testing.T) {
+	attempts := 0
+	executor := NewExecutor(NodeRunnerFunc(func(ctx context.Context, node Node) (TaskResult, error) {
+		attempts++
+		if attempts < 3 {
+			return TaskResult{}, errors.New("temporary failure")
+		}
+		return TaskResult{Output: json.RawMessage(`{"ok":true}`)}, nil
+	}))
+
+	trace, err := executor.Execute(context.Background(), Plan{
+		ID:    "retry",
+		Start: "flaky",
+		Nodes: []Node{{ID: "flaky", Kind: NodeKindTask, Action: "lookup", RetryLimit: 2}},
+	})
+	if err != nil {
+		t.Fatalf("execute plan: %v", err)
+	}
+	if len(trace.Records) != 3 {
+		t.Fatalf("record len = %d, want 3", len(trace.Records))
+	}
+	if trace.Records[0].Status != StatusRetrying || trace.Records[1].Status != StatusRetrying || trace.Records[2].Status != StatusCompleted {
+		t.Fatalf("retry records = %#v", trace.Records)
+	}
+	if trace.Records[0].Attempt != 1 || trace.Records[1].Attempt != 2 || trace.Records[2].Attempt != 3 {
+		t.Fatalf("attempt numbering = %#v", trace.Records)
+	}
+}
+
+func TestExecutorRoutesBlockedSubplanToFailure(t *testing.T) {
+	executor := NewExecutor(NodeRunnerFunc(func(ctx context.Context, node Node) (TaskResult, error) {
+		return TaskResult{}, nil
+	}))
+
+	trace, err := executor.Execute(context.Background(), Plan{
+		ID:    "root",
+		Start: "handoff",
+		Nodes: []Node{{ID: "handoff", Kind: NodeKindSubplan, Subplan: "handoff"}},
+		Subplans: []Plan{{
+			ID:    "handoff",
+			Start: "gate",
+			Nodes: []Node{{ID: "gate", Kind: NodeKindGate, ExpectStatus: "completed"}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("execute plan: %v", err)
+	}
+	if len(trace.Records) != 2 {
+		t.Fatalf("record len = %d, want 2", len(trace.Records))
+	}
+	if trace.Records[0].Status != StatusBlocked {
+		t.Fatalf("nested gate status = %q, want blocked", trace.Records[0].Status)
+	}
+	if trace.Records[1].Status != StatusFailed {
+		t.Fatalf("subplan summary status = %q, want failed", trace.Records[1].Status)
+	}
+	if !strings.Contains(string(trace.Records[1].Output), `"succeeded":false`) {
+		t.Fatalf("subplan summary output = %s", trace.Records[1].Output)
 	}
 }
 
