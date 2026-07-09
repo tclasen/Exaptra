@@ -191,7 +191,7 @@ func (e *Executor) runPlan(ctx context.Context, plan Plan, depth int) (Trace, er
 	}
 
 	trace.Completed = countRecords(trace.Records, StatusCompleted)
-	trace.Failed = countRecords(trace.Records, StatusFailed)
+	trace.Failed = countRecords(trace.Records, StatusFailed, StatusBlocked)
 	return trace, nil
 }
 
@@ -300,10 +300,17 @@ func summarizeSubplan(subtrace Trace) json.RawMessage {
 	return payload
 }
 
-func countRecords(records []Record, status string) int {
+func countRecords(records []Record, statuses ...string) int {
+	if len(statuses) == 0 {
+		return 0
+	}
+	wanted := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		wanted[status] = struct{}{}
+	}
 	total := 0
 	for _, record := range records {
-		if record.Status == status {
+		if _, ok := wanted[record.Status]; ok {
 			total++
 		}
 	}

@@ -60,22 +60,9 @@ func Run(args []string, stdout io.Writer) error {
 		identity.String(): provider,
 	})
 
-	discoveredTools := make(map[string]struct{})
-	for _, tool := range catalog.Snapshot().Discovered {
-		discoveredTools[tool.Name] = struct{}{}
+	if err := exposeProfileTools(catalog, identity, activeProfile); err != nil {
+		return err
 	}
-	for _, toolName := range activeProfile.ToolSurface {
-		if _, ok := discoveredTools[toolName]; ok {
-			if err := catalog.Expose(identity, toolName); err != nil {
-				return err
-			}
-			continue
-		}
-	}
-	if !activeProfile.AllowsTool("lookup") {
-		return fmt.Errorf("profile %q does not allow the lookup tool required by the example workflow", activeProfile.Name)
-	}
-
 	compactor, err := meta.NewStreamCompactor(meta.NewValidator("compact"), s, 3, meta.Identity{Name: "agent", Index: 1}, meta.Identity{Name: identity.Name, Index: identity.Index})
 	if err != nil {
 		return err
@@ -278,4 +265,32 @@ type resolverMap map[string]mcp.ToolCaller
 func (r resolverMap) ResolveToolCaller(identity mcp.Identity) (mcp.ToolCaller, bool) {
 	caller, ok := r[identity.String()]
 	return caller, ok
+}
+
+func exposeProfileTools(catalog *mcp.Catalog, identity mcp.Identity, profile profiles.Selection) error {
+	discoveredTools := make(map[string]struct{})
+	for _, tool := range catalog.Snapshot().Discovered {
+		discoveredTools[tool.Name] = struct{}{}
+	}
+
+	lookupExposed := false
+	for _, toolName := range profile.ToolSurface {
+		if _, ok := discoveredTools[toolName]; !ok {
+			continue
+		}
+		if err := catalog.Expose(identity, toolName); err != nil {
+			return err
+		}
+		if toolName == "lookup" {
+			lookupExposed = true
+		}
+	}
+
+	if !profile.AllowsTool("lookup") {
+		return fmt.Errorf("profile %q does not allow the lookup tool required by the example workflow", profile.Name)
+	}
+	if !lookupExposed {
+		return fmt.Errorf("profile %q requires the lookup tool but it was not discovered", profile.Name)
+	}
+	return nil
 }

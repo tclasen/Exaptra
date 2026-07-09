@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tclasen/Exaptra/mcp"
+	"github.com/tclasen/Exaptra/profiles"
 )
 
 func TestRunProducesSerializedExampleSnapshot(t *testing.T) {
@@ -36,5 +39,18 @@ func TestRunProducesSerializedExampleSnapshot(t *testing.T) {
 		if !strings.Contains(output, needle) {
 			t.Fatalf("example output missing %q: %s", needle, output)
 		}
+	}
+}
+
+func TestExposeProfileToolsRequiresLookupDiscovery(t *testing.T) {
+	catalog := mcp.NewCatalog()
+	profile := profiles.Selection{
+		Name:        "local-example",
+		ToolSurface: []string{"lookup"},
+	}
+
+	err := exposeProfileTools(catalog, mcp.Identity{Name: "filesystem", Index: 0}, profile)
+	if err == nil || !strings.Contains(err.Error(), "not discovered") {
+		t.Fatalf("expected missing lookup discovery error, got %v", err)
 	}
 }

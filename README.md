@@ -79,7 +79,6 @@ and nested subplan execution so the run can be inspected or replayed later.
 Provider-aligned profiles can shape tool exposure and prompt composition for a
 given model and workflow. The example run resolves a profile from the active
 provider and workflow, then records that selection in the run snapshot.
-
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
