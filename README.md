@@ -85,6 +85,13 @@ provider and workflow, then records that selection in the run snapshot.
 MCP provider commands can declare an execution environment such as local,
 Docker, SSH, or WASM. The runtime uses the selected backend to build the launch
 command while keeping the tool implementation itself unchanged.
+
+### Per-Issue Workspaces
+
+Long-running work can be assigned a deterministic workspace path derived from
+issue identity. The workspace lifecycle keeps claim, reconcile, and release
+state visible so retries can resume the same path and terminal issues can be
+cleaned up without touching unrelated workspaces.
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is

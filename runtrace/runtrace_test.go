@@ -14,6 +14,7 @@ import (
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
+	"github.com/tclasen/Exaptra/workspace"
 )
 
 type stubDiscoverer struct {
@@ -146,6 +147,18 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			},
 		},
 	}
+	workspaceSnapshot := &workspace.Snapshot{
+		Root: "/tmp/workspaces",
+		States: []workspace.State{{
+			Issue:    trackerIssue,
+			Path:     "/tmp/workspaces/tclasen/exaptra/52",
+			RunID:    "run-1",
+			Claimed:  true,
+			Released: false,
+			Terminal: false,
+			Attempts: 1,
+		}},
+	}
 
 	catalog := mcp.NewCatalog()
 	catalog.Permissions().GrantMutations("test")
@@ -170,7 +183,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, &batch, &workflowTrace)
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -198,6 +211,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"profile":{"name":"local-example","provider":"local","model":"example-model","workflow":"example"`) || !strings.Contains(string(encoded), `"tool_surface":["lookup"]`) {
 		t.Fatalf("snapshot missing profile data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"workspace":{"root":"/tmp/workspaces"`) || !strings.Contains(string(encoded), `"/tmp/workspaces/tclasen/exaptra/52"`) {
+		t.Fatalf("snapshot missing workspace data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
 		t.Fatalf("snapshot missing workflow data: %s", encoded)
