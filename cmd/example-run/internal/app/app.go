@@ -17,6 +17,7 @@ import (
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
+	"github.com/tclasen/Exaptra/workspace"
 )
 
 // Run executes the runnable example and writes the serialized run snapshot.
@@ -70,6 +71,11 @@ func Run(args []string, stdout io.Writer) error {
 
 	trackerStore := tracker.NewStore(nil)
 	issue := tracker.IssueRef{Owner: "tclasen", Repo: "Exaptra", Number: 52}
+	workspaceManager := workspace.NewManager(".exaptra/workspaces")
+	workspaceState, err := workspaceManager.Claim(issue, "example-run")
+	if err != nil {
+		return err
+	}
 
 	executor := orchestration.NewExecutor(orchestration.WorkerFunc(func(ctx context.Context, task orchestration.Task) (orchestration.TaskResult, error) {
 		payload, err := json.Marshal(map[string]any{
@@ -249,7 +255,7 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, fanoutAggregate, &workflowTrace)
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err

@@ -43,6 +43,9 @@ func TestRunProducesSerializedExampleSnapshot(t *testing.T) {
 	if !strings.Contains(output, `"execution": {`) || !strings.Contains(output, `"kind": "local"`) {
 		t.Fatalf("example output missing execution config: %s", output)
 	}
+	if !strings.Contains(output, `"workspace": {`) || !strings.Contains(output, `".exaptra/workspaces/tclasen/exaptra/52"`) {
+		t.Fatalf("example output missing workspace config: %s", output)
+	}
 }
 
 func TestExposeProfileToolsRequiresLookupDiscovery(t *testing.T) {
