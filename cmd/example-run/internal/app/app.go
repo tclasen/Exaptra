@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tclasen/Exaptra/checkpoint"
 	"github.com/tclasen/Exaptra/config"
 	"github.com/tclasen/Exaptra/examples/localrun"
 	"github.com/tclasen/Exaptra/mcp"
@@ -281,6 +282,13 @@ func Run(args []string, stdout io.Writer) error {
 	}
 
 	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace)
+	checkpointStore := checkpoint.NewFileStore(filepath.Join(os.TempDir(), "exaptra-example-checkpoints"))
+	if _, err := checkpointStore.Save("example-run", snapshot); err != nil {
+		return err
+	}
+	if _, err := checkpointStore.Load("example-run"); err != nil {
+		return err
+	}
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err

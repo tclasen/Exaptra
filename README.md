@@ -129,9 +129,9 @@ The long-term design should make these questions explicit:
 
 This repository now includes the core MVP harness slices for stream handling,
 tool discovery and invocation, permissions, meta transitions, tracker writes,
-execution environments, provider-aligned profiles, workspaces, and repository
-workflow manifests. The remaining work is in finishing the project's higher-
-level orchestration and operational polish.
+execution environments, provider-aligned profiles, workspaces, durable
+checkpoints, and repository workflow manifests. The remaining work is in
+finishing the project's higher-level orchestration and operational polish.
 
 ## Getting Started
 
@@ -188,6 +188,10 @@ serialization. The example run prints the redacted config, stream trajectory,
 tracker audit records, provider profile, orchestration results, workflow graph
 traces, tool registry state, and meta audit records.
 
+Durable checkpoints persist the same redacted run snapshot in an explicit
+versioned envelope. File-backed checkpoints are written through a temporary file
+and atomic rename so completed writes can be loaded after a process restart.
+
 ## MVP Limitations
 
 - The local example uses a simple built-in provider implementation rather than
@@ -205,6 +209,6 @@ Maintainers can validate the current MVP with:
 
 ```bash
 make validate
-go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
+go test ./checkpoint ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
 go run ./cmd/example-run -config examples/localrun/config.example.json
 ```
