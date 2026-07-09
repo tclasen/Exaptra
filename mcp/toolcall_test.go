@@ -28,6 +28,7 @@ func (s stubToolResolver) ResolveToolCaller(identity Identity) (ToolCaller, bool
 func TestDispatcherInvokesDiscoveredToolAndRecordsStreamItems(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "filesystem", Index: 0}
+	catalog.Permissions().GrantMutations("test")
 	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{{
 			Name:        "lookup",
@@ -87,6 +88,7 @@ func TestDispatcherInvokesDiscoveredToolAndRecordsStreamItems(t *testing.T) {
 func TestDispatcherRecordsFailureAsStructuredToolOutput(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "filesystem", Index: 0}
+	catalog.Permissions().GrantMutations("test")
 	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{{Name: "lookup", Description: "lookup records"}},
 	})

@@ -19,6 +19,7 @@ const (
 	ErrorCategoryLifecycle  ErrorCategory = "lifecycle"
 	ErrorCategoryConnection ErrorCategory = "connection"
 	ErrorCategoryTool       ErrorCategory = "tool"
+	ErrorCategoryPermission ErrorCategory = "permission"
 )
 
 // Error is the structured error returned by the MCP lifecycle layer.

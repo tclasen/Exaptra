@@ -52,12 +52,77 @@ type ToolTransition struct {
 	After     *ToolRecord `json:"after,omitempty"`
 }
 
+// PermissionCapability identifies a permission boundary decision.
+type PermissionCapability string
+
+const (
+	PermissionCapabilityReadState   PermissionCapability = "read_state"
+	PermissionCapabilityMutateState PermissionCapability = "mutate_state"
+)
+
+// PermissionDecision captures an authorization decision for inspection.
+type PermissionDecision struct {
+	Capability PermissionCapability `json:"capability"`
+	Target     string               `json:"target,omitempty"`
+	Allowed    bool                 `json:"allowed"`
+	Reason     string               `json:"reason,omitempty"`
+}
+
+// PermissionPolicy is a deny-by-default mutation policy for the registry.
+type PermissionPolicy struct {
+	mu             sync.Mutex
+	allowMutations bool
+	decisions      []PermissionDecision
+}
+
+func NewPermissionPolicy() *PermissionPolicy {
+	return &PermissionPolicy{}
+}
+
+func (p *PermissionPolicy) GrantMutations(reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.allowMutations = true
+	p.decisions = append(p.decisions, PermissionDecision{
+		Capability: PermissionCapabilityMutateState,
+		Allowed:    true,
+		Reason:     reason,
+	})
+}
+
+func (p *PermissionPolicy) Authorize(capability PermissionCapability, target, reason string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	allowed := true
+	if capability == PermissionCapabilityMutateState {
+		allowed = p.allowMutations
+	}
+	p.decisions = append(p.decisions, PermissionDecision{
+		Capability: capability,
+		Target:     target,
+		Allowed:    allowed,
+		Reason:     reason,
+	})
+	return allowed
+}
+
+func (p *PermissionPolicy) Decisions() []PermissionDecision {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	out := make([]PermissionDecision, len(p.decisions))
+	copy(out, p.decisions)
+	return out
+}
+
 // DiscoveryState captures discovered tools separately from model exposure.
 type DiscoveryState struct {
-	Records     []ToolRecord     `json:"records"`
-	Transitions []ToolTransition `json:"transitions"`
-	Discovered  []ToolMetadata   `json:"discovered"`
-	Exposed     []ToolMetadata   `json:"exposed"`
+	Records     []ToolRecord         `json:"records"`
+	Transitions []ToolTransition     `json:"transitions"`
+	Permissions []PermissionDecision `json:"permissions"`
+	Discovered  []ToolMetadata       `json:"discovered"`
+	Exposed     []ToolMetadata       `json:"exposed"`
 }
 
 // Discoverer exposes discovered tools for a provider connection.
@@ -71,12 +136,19 @@ type Catalog struct {
 	mu          sync.Mutex
 	records     map[string]catalogEntry
 	transitions []ToolTransition
+	permissions *PermissionPolicy
 }
 
 func NewCatalog() *Catalog {
 	return &Catalog{
-		records: make(map[string]catalogEntry),
+		records:     make(map[string]catalogEntry),
+		permissions: NewPermissionPolicy(),
 	}
+}
+
+// Permissions returns the registry permission policy.
+func (c *Catalog) Permissions() *PermissionPolicy {
+	return c.permissions
 }
 
 type catalogEntry struct {
@@ -136,6 +208,9 @@ func (c *Catalog) DiscoverFrom(ctx context.Context, identity Identity, discovere
 func (c *Catalog) RefreshFrom(ctx context.Context, identity Identity, discoverer Discoverer) ([]ToolMetadata, error) {
 	if discoverer == nil {
 		return nil, newError(ErrorCategoryProvider, identity.String(), "refresh", "discoverer is required", nil)
+	}
+	if !c.permissions.Authorize(PermissionCapabilityMutateState, identity.String(), "refresh registry") {
+		return nil, newError(ErrorCategoryPermission, identity.String(), "refresh", "refresh denied by policy", nil)
 	}
 
 	tools, err := discoverer.DiscoverTools(ctx)
@@ -222,6 +297,9 @@ func (c *Catalog) MarkUnavailable(identity Identity, name, reason string) error 
 func (c *Catalog) setAvailability(identity Identity, name string, availability ToolAvailability, reason string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.permissions.Authorize(PermissionCapabilityMutateState, toolKey(identity, name), reason) {
+		return newError(ErrorCategoryPermission, identity.String(), availabilityOperation(availability), "mutation denied by policy", nil)
+	}
 
 	key := toolKey(identity, name)
 	entry, ok := c.records[key]
@@ -259,6 +337,7 @@ func (c *Catalog) Snapshot() DiscoveryState {
 	for _, transition := range c.transitions {
 		state.Transitions = append(state.Transitions, transition.clone())
 	}
+	state.Permissions = c.permissions.Decisions()
 	sort.Slice(state.Records, func(i, j int) bool {
 		return recordSortKey(state.Records[i]) < recordSortKey(state.Records[j])
 	})
@@ -276,6 +355,7 @@ func (c *Catalog) Snapshot() DiscoveryState {
 
 // LookupExposed returns the currently exposed tool with the given name.
 func (c *Catalog) LookupExposed(name string) (ToolMetadata, error) {
+	c.permissions.Authorize(PermissionCapabilityReadState, name, "lookup exposed tool")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

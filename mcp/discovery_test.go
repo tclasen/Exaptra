@@ -20,6 +20,7 @@ func (s stubDiscoverer) DiscoverTools(ctx context.Context) ([]ToolMetadata, erro
 func TestCatalogDiscoversAndSeparatesExposureState(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "sleepy", Index: 0}
+	catalog.Permissions().GrantMutations("test")
 
 	discovered, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{{
@@ -80,6 +81,7 @@ func TestCatalogDiscoversAndSeparatesExposureState(t *testing.T) {
 func TestCatalogTracksHiddenAndUnavailableReasonsInSnapshot(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "filesystem", Index: 1}
+	catalog.Permissions().GrantMutations("test")
 
 	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{
@@ -147,6 +149,7 @@ func TestCatalogTracksHiddenAndUnavailableReasonsInSnapshot(t *testing.T) {
 func TestCatalogRefreshPreservesExposureAndRecordsTransitions(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "filesystem", Index: 2}
+	catalog.Permissions().GrantMutations("test")
 
 	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{
@@ -220,6 +223,7 @@ func TestCatalogRefreshPreservesExposureAndRecordsTransitions(t *testing.T) {
 func TestCatalogExposureUpdatesAffectLookupAndVisibleTools(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "filesystem", Index: 3}
+	catalog.Permissions().GrantMutations("test")
 
 	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
 		tools: []ToolMetadata{{Name: "lookup", Description: "lookup records", Scope: "read"}},
@@ -234,8 +238,15 @@ func TestCatalogExposureUpdatesAffectLookupAndVisibleTools(t *testing.T) {
 	if _, err := catalog.LookupExposed("lookup"); err != nil {
 		t.Fatalf("lookup exposed tool: %v", err)
 	}
-	if len(catalog.Snapshot().Exposed) != 1 {
+	snapshot := catalog.Snapshot()
+	if len(snapshot.Exposed) != 1 {
 		t.Fatal("expected exposed tool to be visible")
+	}
+	if !hasPermissionDecision(snapshot.Permissions, PermissionCapabilityReadState, true) {
+		t.Fatal("expected read permission decision to be recorded")
+	}
+	if !hasPermissionDecision(snapshot.Permissions, PermissionCapabilityMutateState, true) {
+		t.Fatal("expected mutation grant decision to be recorded")
 	}
 
 	if err := catalog.Hide(identity, "lookup", "hidden by policy"); err != nil {
@@ -263,6 +274,34 @@ func TestCatalogExposureUpdatesAffectLookupAndVisibleTools(t *testing.T) {
 	}
 }
 
+func TestCatalogDeniesMutationByDefault(t *testing.T) {
+	catalog := NewCatalog()
+	identity := Identity{Name: "filesystem", Index: 4}
+
+	_, err := catalog.DiscoverFrom(context.Background(), identity, stubDiscoverer{
+		tools: []ToolMetadata{{Name: "lookup", Description: "lookup records"}},
+	})
+	if err != nil {
+		t.Fatalf("discover tools: %v", err)
+	}
+
+	err = catalog.Expose(identity, "lookup")
+	if err == nil {
+		t.Fatal("mutation succeeded without permission")
+	}
+	structured, ok := AsError(err)
+	if !ok {
+		t.Fatalf("expected structured error, got %T", err)
+	}
+	if structured.Category != ErrorCategoryPermission {
+		t.Fatalf("category = %q, want %q", structured.Category, ErrorCategoryPermission)
+	}
+	snapshot := catalog.Snapshot()
+	if !hasPermissionDecision(snapshot.Permissions, PermissionCapabilityMutateState, false) {
+		t.Fatal("expected denied mutation decision to be recorded")
+	}
+}
+
 func TestCatalogReturnsStructuredErrorForDiscoveryFailure(t *testing.T) {
 	catalog := NewCatalog()
 	identity := Identity{Name: "broken", Index: 1}
@@ -286,4 +325,13 @@ func TestCatalogReturnsStructuredErrorForDiscoveryFailure(t *testing.T) {
 	if !errors.Is(err, cause) {
 		t.Fatal("discovery error does not wrap cause")
 	}
+}
+
+func hasPermissionDecision(decisions []PermissionDecision, capability PermissionCapability, allowed bool) bool {
+	for _, decision := range decisions {
+		if decision.Capability == capability && decision.Allowed == allowed {
+			return true
+		}
+	}
+	return false
 }
