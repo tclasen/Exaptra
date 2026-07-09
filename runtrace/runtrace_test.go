@@ -9,6 +9,7 @@ import (
 	"github.com/tclasen/Exaptra/config"
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
+	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
 )
@@ -93,6 +94,26 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("record tracker PR link: %v", err)
 	}
 
+	batch := orchestration.Aggregate{
+		ParentRunID:    "run-1",
+		MaxConcurrency: 2,
+		Completed:      2,
+		Failed:         0,
+		Outcomes: []orchestration.Outcome{
+			{
+				Task: orchestration.Task{
+					ID:              "research",
+					Prompt:          "summarize",
+					Workspace:       "shared",
+					SharedWorkspace: true,
+				},
+				Status:     "completed",
+				Output:     json.RawMessage(`{"task":"research"}`),
+				Provenance: &stream.Provenance{Source: "subagent", Component: "research", TraceID: "trace-research"},
+			},
+		},
+	}
+
 	catalog := mcp.NewCatalog()
 	catalog.Permissions().GrantMutations("test")
 	_, err = catalog.DiscoverFrom(context.Background(), mcp.Identity{Name: "filesystem", Index: 0}, stubDiscoverer{tools: []mcp.ToolMetadata{{Name: "lookup", Description: "lookup records", Scope: "read"}}})
@@ -116,7 +137,7 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits())
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), &batch)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -138,6 +159,9 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"type":"exaptra:tracker_pr_link"`) || !strings.Contains(string(encoded), `"pull_request":{"owner":"tclasen","repo":"Exaptra","number":99,"url":"https://github.com/tclasen/Exaptra/pull/99"}`) {
 		t.Fatalf("snapshot missing tracker PR link data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"orchestration":{"parent_run_id":"run-1","max_concurrency":2,"completed":2,"failed":0`) || !strings.Contains(string(encoded), `"trace-research"`) {
+		t.Fatalf("snapshot missing orchestration data: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

@@ -62,6 +62,12 @@ state changes, and PR handoff links. They carry run and issue identity,
 record provenance, and are intended to sit behind an adapter boundary so
 different tracker providers can be supported over time.
 
+### Fan-Out / Fan-In
+
+Long-horizon tasks can be decomposed into bounded fan-out batches of subagent
+work, then merged back into a parent run with ordered outcomes and explicit
+provenance for each result.
+
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
@@ -143,7 +149,8 @@ plain text.
 
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
-tracker audit records, tool registry state, and meta audit records.
+tracker audit records, orchestration results, tool registry state, and meta
+audit records.
 
 ## MVP Limitations
 
