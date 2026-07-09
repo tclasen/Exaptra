@@ -19,6 +19,39 @@ Prefer targeted checks while developing, then broader checks before finalizing.
 Report exactly what was run and what passed or failed. If checks cannot be run,
 say why.
 
+## GitHub Ticket Workflow
+
+Every task must be tracked by a GitHub issue on the project board, including
+interactive or conversational work.
+
+Before starting implementation:
+
+1. Find the GitHub issue associated with the requested work.
+2. If no issue exists, create one and add it to the project board.
+3. If the issue depends on missing prerequisite work, create prerequisite
+   issues, add them to the project board, and complete prerequisites first.
+4. If the issue is too large or can be usefully decomposed, create smaller
+   issues and work them independently, even when that results in multiple pull
+   requests for one user request.
+5. Create a new branch for the active issue and keep all work associated with
+   that issue.
+
+After implementation:
+
+1. Commit the completed work with an atomic Conventional Commit.
+2. Push the branch to the remote.
+3. Open a pull request linked to the issue.
+4. Create a sub-agent with a fresh context window to review the pull request and
+   place review comments.
+5. Resolve all review comments.
+6. Merge the pull request only after review comments are resolved and checks
+   pass.
+7. Close the issue when the work satisfies it.
+
+Always watch for missing tickets, prerequisite work, and opportunities to split
+oversized tickets. Keep active work associated with exactly one current issue
+unless deliberately decomposing it into multiple issues.
+
 ## Small Batches
 
 Keep each batch focused on one intent:
@@ -134,10 +167,13 @@ system, or developer guidance.
 ## Done Means
 
 - Requested change is complete.
+- Work is associated with a GitHub issue on the project board.
+- Pull request review comments are resolved.
 - Relevant checks pass.
 - Tests/docs are updated as needed.
 - No unrelated edits are included.
 - Commit history, if created, is atomic and uses Conventional Commits.
+- The pull request is merged and the issue is closed when satisfied.
 - Final response lists checks run and any skipped checks or risks.
 
 ## References
