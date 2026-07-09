@@ -116,6 +116,19 @@ func TestPlanValidationRejectsMissingReferencesAndCycles(t *testing.T) {
 	if err := cyclic.Validate(); err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("cycle validation = %v", err)
 	}
+
+	duplicateSubplans := Plan{
+		ID:    "dup",
+		Start: "start",
+		Nodes: []Node{{ID: "start", Kind: NodeKindTask, Action: "lookup"}},
+		Subplans: []Plan{
+			{ID: "shared", Start: "a", Nodes: []Node{{ID: "a", Kind: NodeKindTask, Action: "compact"}}},
+			{ID: "shared", Start: "b", Nodes: []Node{{ID: "b", Kind: NodeKindTask, Action: "compact"}}},
+		},
+	}
+	if err := duplicateSubplans.Validate(); err == nil || !strings.Contains(err.Error(), "defined more than once") {
+		t.Fatalf("duplicate subplan validation = %v", err)
+	}
 }
 
 func TestCloneTraceDeepCopies(t *testing.T) {

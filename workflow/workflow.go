@@ -311,7 +311,7 @@ func (p Plan) Validate() error {
 	return validatePlan(p, map[string]struct{}{}, map[string]struct{}{})
 }
 
-func validatePlan(plan Plan, validated, recursionStack map[string]struct{}) error {
+func validatePlan(plan Plan, defined, recursionStack map[string]struct{}) error {
 	if plan.ID == "" {
 		return errors.New("workflow: plan id is required")
 	}
@@ -321,12 +321,12 @@ func validatePlan(plan Plan, validated, recursionStack map[string]struct{}) erro
 	if _, ok := recursionStack[plan.ID]; ok {
 		return fmt.Errorf("workflow: plan %q recursively references itself", plan.ID)
 	}
+	if _, ok := defined[plan.ID]; ok {
+		return fmt.Errorf("workflow: plan %q is defined more than once", plan.ID)
+	}
+	defined[plan.ID] = struct{}{}
 	recursionStack[plan.ID] = struct{}{}
 	defer delete(recursionStack, plan.ID)
-	if _, ok := validated[plan.ID]; ok {
-		return nil
-	}
-	validated[plan.ID] = struct{}{}
 
 	nodes := make(map[string]Node, len(plan.Nodes))
 	for _, node := range plan.Nodes {
@@ -384,7 +384,7 @@ func validatePlan(plan Plan, validated, recursionStack map[string]struct{}) erro
 	}
 
 	for _, subplan := range plan.Subplans {
-		if err := validatePlan(subplan, validated, recursionStack); err != nil {
+		if err := validatePlan(subplan, defined, recursionStack); err != nil {
 			return err
 		}
 	}
