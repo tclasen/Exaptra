@@ -95,10 +95,18 @@ type ModelConfig struct {
 
 // MCPProvider configures one external MCP provider process.
 type MCPProvider struct {
-	Name    string            `json:"name"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Name      string               `json:"name"`
+	Command   string               `json:"command"`
+	Args      []string             `json:"args,omitempty"`
+	Env       map[string]string    `json:"env,omitempty"`
+	Execution ExecutionEnvironment `json:"execution,omitempty"`
+}
+
+// ExecutionEnvironment selects how a provider command is launched.
+type ExecutionEnvironment struct {
+	Kind   string   `json:"kind,omitempty"`
+	Target string   `json:"target,omitempty"`
+	Args   []string `json:"args,omitempty"`
 }
 
 // ToolPolicy controls which ordinary tools the runtime exposes initially.
@@ -160,10 +168,17 @@ type rawModelConfig struct {
 }
 
 type rawMCPProvider struct {
-	Name    *string           `json:"name"`
-	Command *string           `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Name      *string                  `json:"name"`
+	Command   *string                  `json:"command"`
+	Args      []string                 `json:"args,omitempty"`
+	Env       map[string]string        `json:"env,omitempty"`
+	Execution *rawExecutionEnvironment `json:"execution,omitempty"`
+}
+
+type rawExecutionEnvironment struct {
+	Kind   *string  `json:"kind,omitempty"`
+	Target *string  `json:"target,omitempty"`
+	Args   []string `json:"args,omitempty"`
 }
 
 type rawToolPolicy struct {
@@ -257,11 +272,28 @@ func (r rawMCPProvider) resolve(index int) (MCPProvider, error) {
 		return MCPProvider{}, newConfigError(fmt.Sprintf("mcp_providers[%d].command", index), "missing mcp provider command", nil)
 	}
 	return MCPProvider{
-		Name:    *r.Name,
-		Command: *r.Command,
-		Args:    append([]string(nil), r.Args...),
-		Env:     cloneStringMap(r.Env),
+		Name:      *r.Name,
+		Command:   *r.Command,
+		Args:      append([]string(nil), r.Args...),
+		Env:       cloneStringMap(r.Env),
+		Execution: resolveExecutionEnvironment(r.Execution),
 	}, nil
+}
+
+func resolveExecutionEnvironment(r *rawExecutionEnvironment) ExecutionEnvironment {
+	if r == nil {
+		return ExecutionEnvironment{}
+	}
+	env := ExecutionEnvironment{
+		Args: append([]string(nil), r.Args...),
+	}
+	if r.Kind != nil {
+		env.Kind = *r.Kind
+	}
+	if r.Target != nil {
+		env.Target = *r.Target
+	}
+	return env
 }
 
 func (r rawToolPolicy) resolve() (ToolPolicy, error) {

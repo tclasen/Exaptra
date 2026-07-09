@@ -88,3 +88,31 @@ func TestRegistryReturnsStructuredErrorForBadCommand(t *testing.T) {
 		t.Fatal("expected structured error to unwrap cleanly")
 	}
 }
+
+func TestRegistryReturnsStructuredEnvironmentErrorForUnknownBackend(t *testing.T) {
+	registry := NewRegistry()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := registry.Open(ctx, config.MCPProvider{
+		Name:    "broken",
+		Command: "sleep",
+		Execution: config.ExecutionEnvironment{
+			Kind: "spaceship",
+		},
+	}, 0)
+	if err == nil {
+		t.Fatal("open succeeded with unknown environment kind")
+	}
+
+	structured, ok := AsError(err)
+	if !ok {
+		t.Fatalf("expected structured error, got %T", err)
+	}
+	if structured.Category != ErrorCategoryEnvironment {
+		t.Fatalf("category = %q, want %q", structured.Category, ErrorCategoryEnvironment)
+	}
+	if structured.Identity != "broken[0]" {
+		t.Fatalf("identity = %q, want broken[0]", structured.Identity)
+	}
+}

@@ -79,6 +79,12 @@ and nested subplan execution so the run can be inspected or replayed later.
 Provider-aligned profiles can shape tool exposure and prompt composition for a
 given model and workflow. The example run resolves a profile from the active
 provider and workflow, then records that selection in the run snapshot.
+
+### Execution Environments
+
+MCP provider commands can declare an execution environment such as local,
+Docker, SSH, or WASM. The runtime uses the selected backend to build the launch
+command while keeping the tool implementation itself unchanged.
 ## Design Direction
 
 Exaptra is intended to explore an agent architecture where the core harness is
