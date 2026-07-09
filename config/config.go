@@ -75,6 +75,17 @@ type Config struct {
 	Debug       DebugConfig     `json:"debug"`
 }
 
+// Redacted returns a copy of the config with secret values removed.
+func (c Config) Redacted() Config {
+	redacted := c
+	redacted.Model.APIKey = ""
+	redacted.MCP = append([]MCPProvider(nil), c.MCP...)
+	for i := range redacted.MCP {
+		redacted.MCP[i].Env = cloneRedactedEnv(redacted.MCP[i].Env)
+	}
+	return redacted
+}
+
 // ModelConfig selects a model provider and resolves its secret credentials.
 type ModelConfig struct {
 	Provider string `json:"provider"`
@@ -304,6 +315,17 @@ func cloneStringMap(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
 		out[k] = v
+	}
+	return out
+}
+
+func cloneRedactedEnv(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k := range in {
+		out[k] = "[redacted]"
 	}
 	return out
 }
