@@ -11,6 +11,7 @@ import (
 	"github.com/tclasen/Exaptra/examples/localrun"
 	"github.com/tclasen/Exaptra/mcp"
 	"github.com/tclasen/Exaptra/meta"
+	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/runtrace"
 	"github.com/tclasen/Exaptra/stream"
 	"github.com/tclasen/Exaptra/tracker"
@@ -116,7 +117,41 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits())
+	executor := orchestration.NewExecutor(orchestration.WorkerFunc(func(ctx context.Context, task orchestration.Task) (orchestration.TaskResult, error) {
+		payload, err := json.Marshal(map[string]any{
+			"parent_run_id":    "example-run",
+			"task":             task.ID,
+			"prompt":           task.Prompt,
+			"workspace":        task.Workspace,
+			"shared_workspace": task.SharedWorkspace,
+			"source":           "subagent",
+			"source_trace":     "example-run:" + task.ID,
+		})
+		if err != nil {
+			return orchestration.TaskResult{}, err
+		}
+		return orchestration.TaskResult{
+			Output: payload,
+			Provenance: &stream.Provenance{
+				Source:    "subagent",
+				Provider:  cfg.Model.Provider,
+				Component: task.ID,
+				TraceID:   "example-run:" + task.ID,
+			},
+		}, nil
+	}), 2)
+	batch, err := executor.Execute(context.Background(), orchestration.Batch{
+		ParentRunID: "example-run",
+		Tasks: []orchestration.Task{
+			{ID: "research", Prompt: "summarize the lookup output", Workspace: "shared", SharedWorkspace: true, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+			{ID: "validate", Prompt: "confirm handoff state and tracker writes", Workspace: "review", SharedWorkspace: false, Provenance: &stream.Provenance{Source: "orchestrator", Provider: cfg.Model.Provider}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &batch)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
