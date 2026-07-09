@@ -15,6 +15,19 @@ hooks:
 runtime:
   shared_workspace: true
   max_concurrency: 2
+telemetry:
+  enabled: true
+  sampling_rate: 1
+  high_risk_sampling_rate: 0.25
+  retention_days: 14
+  allowed_readers:
+    - maintainers
+  export_requires_approval: true
+  redact_attributes:
+    - prompt
+    - message
+    - secret
+    - token
 ---
 
 # Workflow Contract
@@ -30,3 +43,7 @@ Blockers: {{join .Issue.Blockers ", "}}
 Instructions: {{.Issue.Instructions}}
 
 The orchestrator should treat this file as the authoritative run contract for the issue slice.
+
+Telemetry governance: export only after applying the workflow telemetry policy,
+including redaction, sampling, retention, and access controls declared in front
+matter.

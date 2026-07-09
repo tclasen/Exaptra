@@ -17,6 +17,7 @@ import (
 	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/runtrace"
 	"github.com/tclasen/Exaptra/stream"
+	"github.com/tclasen/Exaptra/telemetry"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
 	"github.com/tclasen/Exaptra/workflowdoc"
@@ -280,7 +281,28 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace)
+	telemetryDecisions := []telemetry.Decision{
+		telemetry.ApplyGovernance(cfg.Telemetry, telemetry.Event{
+			Kind: "span",
+			Name: "example.workflow",
+			Attributes: map[string]string{
+				"provider": cfg.Model.Provider,
+				"model":    cfg.Model.Name,
+				"prompt":   researchPrompt,
+			},
+		}, false),
+		telemetry.ApplyGovernance(cfg.Telemetry, telemetry.Event{
+			Kind: "metric",
+			Name: "example.high_risk_review",
+			Risk: telemetry.RiskHigh,
+			Attributes: map[string]string{
+				"phase":  "handoff",
+				"secret": "must-not-export",
+			},
+		}, false),
+	}
+
+	snapshot := runtrace.NewSnapshot(cfg, s, catalog, compactor.Audits(), trackerStore.Audits(), &activeProfile, &workspace.Snapshot{Root: ".exaptra/workspaces", States: []workspace.State{workspaceState}}, fanoutAggregate, &workflowTrace, telemetryDecisions)
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err

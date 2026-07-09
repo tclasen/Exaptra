@@ -12,6 +12,7 @@ import (
 	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/stream"
+	"github.com/tclasen/Exaptra/telemetry"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
 	"github.com/tclasen/Exaptra/workspace"
@@ -38,6 +39,15 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 			Command: "npx",
 			Env:     map[string]string{"EXAPTRA_TOKEN": "secret-provider-token"},
 		}},
+		Telemetry: config.TelemetryConfig{
+			Enabled:                true,
+			SamplingRate:           1,
+			HighRiskSamplingRate:   0.25,
+			RetentionDays:          14,
+			AllowedReaders:         []string{"maintainers"},
+			ExportRequiresApproval: true,
+			RedactAttributes:       []string{"prompt"},
+		},
 		Debug: config.DebugConfig{Trace: true, Audit: true},
 	}
 
@@ -183,7 +193,16 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 		t.Fatalf("apply audit transition: %v", err)
 	}
 
-	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace)
+	telemetryDecisions := []telemetry.Decision{telemetry.ApplyGovernance(cfg.Telemetry, telemetry.Event{
+		Kind: "span",
+		Name: "model.prompt",
+		Attributes: map[string]string{
+			"prompt": "secret prompt",
+			"phase":  "lookup",
+		},
+	}, true)}
+
+	snapshot := NewSnapshot(cfg, s, catalog, []meta.AuditRecord{audit}, trackerStore.Audits(), profileSelection, workspaceSnapshot, &batch, &workflowTrace, telemetryDecisions)
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
@@ -217,6 +236,12 @@ func TestSnapshotIncludesRunStateAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"workflow":{"plan_id":"example","completed":0,"failed":0`) || !strings.Contains(string(encoded), `"trace-lookup"`) {
 		t.Fatalf("snapshot missing workflow data: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"type":"exaptra:telemetry_governance"`) || !strings.Contains(string(encoded), `"prompt":"[redacted]"`) {
+		t.Fatalf("snapshot missing telemetry governance data: %s", encoded)
+	}
+	if strings.Contains(string(encoded), "secret prompt") {
+		t.Fatalf("snapshot leaked telemetry attribute: %s", encoded)
 	}
 	if !strings.Contains(string(encoded), `"availability":"exposed"`) {
 		t.Fatalf("snapshot missing registry state: %s", encoded)

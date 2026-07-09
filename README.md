@@ -186,7 +186,13 @@ plain text.
 Provider-specific environment values in debug snapshots are redacted before
 serialization. The example run prints the redacted config, stream trajectory,
 tracker audit records, provider profile, orchestration results, workflow graph
-traces, tool registry state, and meta audit records.
+traces, tool registry state, telemetry governance decisions, and meta audit
+records.
+
+Telemetry governance is declared in runtime config and workflow front matter.
+Export decisions apply redaction rules before telemetry leaves the runtime,
+honor sampling and retention policy, and record the allowed reader set plus
+whether export approval is required.
 
 ## MVP Limitations
 
@@ -205,6 +211,6 @@ Maintainers can validate the current MVP with:
 
 ```bash
 make validate
-go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
+go test ./config ./execution ./mcp ./meta ./orchestration ./profiles ./runtrace ./stream ./telemetry ./tracker ./workflow ./workspace ./workflowdoc ./cmd/example-run/internal/app
 go run ./cmd/example-run -config examples/localrun/config.example.json
 ```

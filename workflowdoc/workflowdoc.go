@@ -23,10 +23,11 @@ type Document struct {
 
 // FrontMatter declares orchestration policy, prompt fragments, hooks, and runtime settings.
 type FrontMatter struct {
-	Policy  Policy  `json:"policy" yaml:"policy"`
-	Prompts Prompts `json:"prompts" yaml:"prompts"`
-	Hooks   []Hook  `json:"hooks,omitempty" yaml:"hooks,omitempty"`
-	Runtime Runtime `json:"runtime" yaml:"runtime"`
+	Policy    Policy    `json:"policy" yaml:"policy"`
+	Prompts   Prompts   `json:"prompts" yaml:"prompts"`
+	Hooks     []Hook    `json:"hooks,omitempty" yaml:"hooks,omitempty"`
+	Runtime   Runtime   `json:"runtime" yaml:"runtime"`
+	Telemetry Telemetry `json:"telemetry" yaml:"telemetry"`
 }
 
 // Policy controls the run contract.
@@ -56,6 +57,17 @@ type Hook struct {
 type Runtime struct {
 	SharedWorkspace bool `json:"shared_workspace,omitempty" yaml:"shared_workspace,omitempty"`
 	MaxConcurrency  int  `json:"max_concurrency,omitempty" yaml:"max_concurrency,omitempty"`
+}
+
+// Telemetry declares workflow-boundary governance for run telemetry.
+type Telemetry struct {
+	Enabled                bool     `json:"enabled" yaml:"enabled"`
+	SamplingRate           float64  `json:"sampling_rate" yaml:"sampling_rate"`
+	HighRiskSamplingRate   float64  `json:"high_risk_sampling_rate,omitempty" yaml:"high_risk_sampling_rate,omitempty"`
+	RetentionDays          int      `json:"retention_days" yaml:"retention_days"`
+	AllowedReaders         []string `json:"allowed_readers,omitempty" yaml:"allowed_readers,omitempty"`
+	ExportRequiresApproval bool     `json:"export_requires_approval" yaml:"export_requires_approval"`
+	RedactAttributes       []string `json:"redact_attributes,omitempty" yaml:"redact_attributes,omitempty"`
 }
 
 // IssueContext contains the issue-specific values rendered into the workflow body.
@@ -154,6 +166,18 @@ func (f FrontMatter) validate() error {
 	}
 	if f.Runtime.MaxConcurrency < 0 {
 		errs = append(errs, errors.New("runtime.max_concurrency must be zero or positive"))
+	}
+	if f.Telemetry.SamplingRate < 0 || f.Telemetry.SamplingRate > 1 {
+		errs = append(errs, errors.New("telemetry.sampling_rate must be between 0 and 1"))
+	}
+	if f.Telemetry.HighRiskSamplingRate < 0 || f.Telemetry.HighRiskSamplingRate > 1 {
+		errs = append(errs, errors.New("telemetry.high_risk_sampling_rate must be between 0 and 1"))
+	}
+	if f.Telemetry.Enabled && f.Telemetry.RetentionDays <= 0 {
+		errs = append(errs, errors.New("telemetry.retention_days must be positive when telemetry is enabled"))
+	}
+	if f.Telemetry.Enabled && len(f.Telemetry.AllowedReaders) == 0 {
+		errs = append(errs, errors.New("telemetry.allowed_readers is required when telemetry is enabled"))
 	}
 	if len(errs) == 0 {
 		return nil

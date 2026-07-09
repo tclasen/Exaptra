@@ -9,6 +9,7 @@ import (
 	"github.com/tclasen/Exaptra/orchestration"
 	"github.com/tclasen/Exaptra/profiles"
 	"github.com/tclasen/Exaptra/stream"
+	"github.com/tclasen/Exaptra/telemetry"
 	"github.com/tclasen/Exaptra/tracker"
 	"github.com/tclasen/Exaptra/workflow"
 	"github.com/tclasen/Exaptra/workspace"
@@ -25,10 +26,11 @@ type Snapshot struct {
 	Workspace     *workspace.Snapshot      `json:"workspace,omitempty"`
 	Orchestration *orchestration.Aggregate `json:"orchestration,omitempty"`
 	Workflow      *workflow.Trace          `json:"workflow,omitempty"`
+	Telemetry     []telemetry.Decision     `json:"telemetry,omitempty"`
 }
 
 // NewSnapshot collects a redacted, serializable run snapshot.
-func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, profile *profiles.Selection, workspaceSnapshot *workspace.Snapshot, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace) Snapshot {
+func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audits []meta.AuditRecord, trackerAudits []tracker.AuditRecord, profile *profiles.Selection, workspaceSnapshot *workspace.Snapshot, orchestrationAggregate *orchestration.Aggregate, workflowTrace *workflow.Trace, telemetryDecisions []telemetry.Decision) Snapshot {
 	var registry mcp.DiscoveryState
 	if catalog != nil {
 		registry = catalog.Snapshot()
@@ -47,6 +49,7 @@ func NewSnapshot(cfg config.Config, s *stream.Stream, catalog *mcp.Catalog, audi
 		Workspace:     cloneWorkspaceSnapshot(workspaceSnapshot),
 		Orchestration: orchestration.CloneAggregate(orchestrationAggregate),
 		Workflow:      workflow.CloneTrace(workflowTrace),
+		Telemetry:     cloneTelemetryDecisions(telemetryDecisions),
 	}
 }
 
@@ -84,4 +87,30 @@ func cloneWorkspaceSnapshot(in *workspace.Snapshot) *workspace.Snapshot {
 		copy(cloned.States, in.States)
 	}
 	return &cloned
+}
+
+func cloneTelemetryDecisions(in []telemetry.Decision) []telemetry.Decision {
+	if in == nil {
+		return nil
+	}
+	out := make([]telemetry.Decision, len(in))
+	for i, decision := range in {
+		out[i] = decision
+		out[i].Event.Attributes = cloneStringMap(decision.Event.Attributes)
+		out[i].AllowedReaders = append([]string(nil), decision.AllowedReaders...)
+		out[i].RedactedAttributes = append([]string(nil), decision.RedactedAttributes...)
+		out[i].Attributes = cloneStringMap(decision.Attributes)
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
