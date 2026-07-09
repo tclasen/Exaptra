@@ -80,17 +80,17 @@ specific task:
 
 When a task needs additional human feedback or approval:
 
-- Mention the user in the issue thread and pause that work until feedback
-  arrives.
-- Apply the feedback when it arrives, and ask follow-up questions only if
-  they are required to proceed.
+- Tag the user in the issue thread and pause that work until feedback arrives.
+- When feedback arrives, apply it before continuing, and ask follow-up
+  questions only if they are required to proceed.
 - For high-risk or high-importance pull requests, request review from the
-  project human expert before merging.
-- If the human leaves feedback on a pull request, address it and request a
+  project human expert, `tclasen`, before merging.
+- If `tclasen` leaves feedback on a pull request, address it and request a
   new review before merging.
 - If a task is blocked waiting for human approval or feedback, switch to any
   other unblocked work instead of waiting on the blocked task.
-- Use `tclasen` as the project-specific human expert for this repository.
+- Use `tclasen` as the project-specific human expert for this repository and
+  as the default reviewer for human-on-the-loop checks.
 
 ## Small Batches
 
