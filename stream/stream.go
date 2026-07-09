@@ -248,6 +248,19 @@ func (s *Stream) Convert(adapter Adapter) ([]byte, error) {
 	return adapter.Convert(s.Trajectory())
 }
 
+// Compact retains the most recent items and discards the older prefix.
+func (s *Stream) Compact(retain int) error {
+	if retain < 0 {
+		return errors.New("stream: retain count must be non-negative")
+	}
+	if retain >= len(s.items) {
+		return nil
+	}
+	start := len(s.items) - retain
+	s.items = cloneItems(s.items[start:])
+	return nil
+}
+
 func message(id string, sequence int64, role string, contentType string, content string, provenance *Provenance) Item {
 	return Item{
 		ID:       id,

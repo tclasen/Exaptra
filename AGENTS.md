@@ -60,6 +60,17 @@ When the user asks to "work on the next task" or uses similar phrasing:
 2. Work on that task using the GitHub Ticket Workflow.
 3. Exit after the workflow is complete.
 
+### Unspecified Work Requests
+
+When the user asks you to work, continue, or make progress without naming a
+specific task:
+
+1. First check for any hanging tickets or pull requests that need to be
+   resumed.
+2. If a hanging ticket or PR exists, resume that work before starting new
+   work.
+3. If nothing is hanging, follow the Next Task Requests workflow.
+
 ## Small Batches
 
 Keep each batch focused on one intent:
